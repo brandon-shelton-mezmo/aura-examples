@@ -10,7 +10,7 @@ Caught across configuration reviews. Do not reintroduce.
 | Use `provider = "Provider"` (capitalized) | Use `provider = "openai"` (lowercase) | Aura expects lowercase provider names |
 | Omit `[agent]` section | Always include `name` and `system_prompt` | Agent won't start without identity |
 | Set `turn_depth = 0` | Use `turn_depth = 1` minimum or omit for default | Zero disables all tool use |
-| Use `transport = "http"` | Use `transport = "http_streamable"` or `"sse"` | "http" is not a valid transport type |
+| Use `transport = "http"` or `"sse"` | Use `transport = "http_streamable"` or `"stdio"` | Only two valid transports: `http_streamable` and `stdio` |
 | Put MCP config under `[mcp.servers]` (no name) | Use `[mcp.servers.my_server_name]` | Each server needs a unique key |
 | Reference localhost MCP URLs in Docker examples | Use Docker network names or host.docker.internal | Container can't reach host localhost |
 

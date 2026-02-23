@@ -16,7 +16,7 @@
 |---------|-------|----------|
 | `connection refused` to MCP server | MCP server not running or wrong URL | Start the MCP server first; check URL and port |
 | `timeout` connecting to MCP server | Network issue or server slow to start | Increase timeout; check if server is healthy |
-| `invalid transport type` | Wrong transport value in config | Use `"http_streamable"`, `"sse"`, or `"stdio"` |
+| `invalid transport type` | Wrong transport value in config | Use `"http_streamable"` or `"stdio"` (only two valid transports) |
 | MCP tools not appearing | Server connected but no tools listed | Check MCP server actually implements tools; use `--dump-prompt` to debug |
 
 ## Docker

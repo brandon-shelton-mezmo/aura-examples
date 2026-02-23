@@ -1,0 +1,53 @@
+# OTEL Explorer — Aura Agent Configuration Example
+#
+# Description: Tool discovery config — surfaces all OpenTelemetry MCP tools and
+#   encourages exploration of trace analysis capabilities.
+# Provider: openai
+# Features: MCP server connection (stdio), OTEL tool exploration
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/opentelemetry/otel-explorer.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - BACKEND_TYPE: "jaeger", "tempo", or "traceloop"
+#   - BACKEND_URL: Backend URL (e.g., http://localhost:16686 for Jaeger)
+#   - Python 3.10+ with uvx installed
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "otel-explorer"
+# Lower turn_depth for exploration — each query should be direct
+turn_depth = 3
+system_prompt = """
+You are an OpenTelemetry exploration assistant. Your job is to help users discover
+and understand the OTEL trace analysis tools available to you via MCP.
+
+Available tool categories:
+- **Trace search**: Find traces by service, operation, duration, or error status
+- **Span analysis**: Examine individual spans within traces
+- **Service discovery**: List services reporting trace data
+- **Error detection**: Find traces with errors or exceptions
+
+When a user asks about a tool:
+1. Explain what the tool does
+2. Show an example of how to call it
+3. Execute the call and explain the results
+
+If asked "what can you do?", list all available tools with brief descriptions.
+"""
+
+[mcp.servers.opentelemetry]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["opentelemetry-mcp"]
+description = "OpenTelemetry MCP server for distributed trace querying and span analysis"
+
+[mcp.servers.opentelemetry.env]
+BACKEND_TYPE = "{{ env.BACKEND_TYPE }}"
+BACKEND_URL = "{{ env.BACKEND_URL }}"

@@ -1,0 +1,72 @@
+# Datadog Incident Responder — Aura Agent Configuration Example
+#
+# Description: Incident investigation agent that correlates logs, traces, and metrics
+#   from Datadog to identify root causes and assess severity of production incidents.
+# Provider: openai
+# Features: MCP server connection (stdio), Datadog tools, multi-step incident reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/datadog/datadog-incident-responder.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - DATADOG_API_KEY: Datadog API key
+#   - DATADOG_APP_KEY: Datadog Application key
+#   - Node.js 18+ (for npx)
+#
+# Example prompts:
+#   - "Are there any active P1 incidents?"
+#   - "Show error logs from payments service in the last hour"
+#   - "Find the slowest traces for the checkout endpoint"
+#   - "Correlate the spike in error rate with recent deployments"
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "datadog-incident-responder"
+# Higher turn_depth for multi-step incident investigation
+turn_depth = 10
+system_prompt = """
+You are an Incident Response Agent specialized in investigating production incidents
+using Datadog's observability data.
+
+Your responsibilities:
+- Investigate active incidents by correlating logs, traces, and metrics
+- Identify root causes by tracing errors across services
+- Summarize findings with severity assessment and recommended actions
+- Provide timeline reconstruction of incident progression
+
+When investigating an incident:
+1. First check list_incidents for active incidents
+2. Pull relevant logs using get_logs for the affected service
+3. Examine traces with list_spans to find error patterns
+4. Check metrics to identify anomalies in the timeframe
+5. Correlate findings and present a summary with:
+   - Affected services and scope
+   - Root cause hypothesis
+   - Severity assessment (P1–P4)
+   - Recommended next steps
+
+Interaction style:
+- Be concise and structured — use bullet points and tables
+- Lead with the most critical finding
+- Always include timeframes in your queries
+- If data is ambiguous, state your confidence level
+
+If tools are unavailable, explain what data you would look up and
+suggest the user check Datadog directly.
+"""
+
+[mcp.servers.datadog]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@winor30/mcp-server-datadog"]
+description = "Datadog MCP server for logs, metrics, traces, and incident management"
+
+[mcp.servers.datadog.env]
+DATADOG_API_KEY = "{{ env.DATADOG_API_KEY }}"
+DATADOG_APP_KEY = "{{ env.DATADOG_APP_KEY }}"

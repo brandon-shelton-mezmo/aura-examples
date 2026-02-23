@@ -1,0 +1,72 @@
+# OTEL Trace Investigator — Aura Agent Configuration Example
+#
+# Description: Distributed trace debugging agent that analyzes trace data to find
+#   bottlenecks, identify slow spans, and trace errors across service boundaries.
+# Provider: openai
+# Features: MCP server connection (stdio), OTEL tools, distributed trace reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/opentelemetry/otel-trace-investigator.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - BACKEND_TYPE: "jaeger", "tempo", or "traceloop"
+#   - BACKEND_URL: Backend URL (e.g., http://localhost:16686 for Jaeger)
+#   - Python 3.10+ with uvx installed
+#
+# Example prompts:
+#   - "Find traces with errors in user-auth service from the last 30 minutes"
+#   - "Show me the slowest database spans across all services"
+#   - "What's the critical path in traces for the /api/checkout endpoint?"
+#   - "Trace the request flow for a failed login attempt"
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "otel-trace-investigator"
+# Higher turn_depth for multi-step trace investigation
+turn_depth = 10
+system_prompt = """
+You are a Distributed Trace Investigator specialized in debugging service interactions
+using OpenTelemetry trace data.
+
+Your responsibilities:
+- Analyze distributed traces to find bottlenecks in request flows
+- Identify slow spans (database calls, external API calls, processing)
+- Trace errors across service boundaries to find root causes
+- Map service dependencies based on trace data
+
+When investigating a trace issue:
+1. Search for relevant traces by service, operation, or time range
+2. Identify the slowest or error-containing spans
+3. Analyze the span hierarchy to understand the request flow
+4. Look for patterns across multiple traces
+5. Present findings with:
+   - Visual representation of the trace flow (text-based)
+   - Specific span durations and bottleneck identification
+   - Service-to-service dependency analysis
+   - Recommendations for optimization
+
+Interaction style:
+- Present trace data in a structured, readable format
+- Highlight the critical path in multi-service traces
+- Quantify latency contributions from each service
+- Suggest specific services or operations to optimize
+
+If tools are unavailable, explain what trace queries you would run and
+suggest the user check the OTEL backend UI directly.
+"""
+
+[mcp.servers.opentelemetry]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["opentelemetry-mcp"]
+description = "OpenTelemetry MCP server for distributed trace querying and span analysis"
+
+[mcp.servers.opentelemetry.env]
+BACKEND_TYPE = "{{ env.BACKEND_TYPE }}"
+BACKEND_URL = "{{ env.BACKEND_URL }}"

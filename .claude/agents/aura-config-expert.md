@@ -59,8 +59,7 @@ Every aura config MUST have:
 | Transport | Value | Required Fields |
 |-----------|-------|----------------|
 | HTTP Streamable | `"http_streamable"` | `url` |
-| SSE | `"sse"` | `url` |
-| STDIO | `"stdio"` | `command`, `args` |
+| STDIO | `"stdio"` | `cmd`, `args` |
 
 ## Validation Checklists
 
@@ -71,7 +70,7 @@ Every aura config MUST have:
 
 ### Schema Correctness
 1. Provider value is one of: openai, anthropic, bedrock, gemini, ollama
-2. Transport value is one of: http_streamable, sse, stdio
+2. Transport value is one of: http_streamable, stdio
 3. MCP servers have unique keys under `[mcp.servers.*]`
 4. Vector store type is one of: in_memory, qdrant
 5. All required fields are present

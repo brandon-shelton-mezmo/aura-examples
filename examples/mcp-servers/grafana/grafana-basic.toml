@@ -1,0 +1,50 @@
+# Grafana Basic — Aura Agent Configuration Example
+#
+# Description: Minimal Grafana MCP integration — connects an aura agent to Grafana
+#   for querying Prometheus metrics, Loki logs, dashboards, and alert rules.
+# Provider: openai
+# Features: MCP server connection (stdio), Grafana observability tools
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/grafana/grafana-basic.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+#   # or with Docker:
+#   docker run -v $(pwd)/examples/mcp-servers/grafana/grafana-basic.toml:/app/config.toml \
+#     -e OPENAI_API_KEY=$OPENAI_API_KEY \
+#     -e GRAFANA_URL=$GRAFANA_URL \
+#     -e GRAFANA_SERVICE_ACCOUNT_TOKEN=$GRAFANA_SERVICE_ACCOUNT_TOKEN \
+#     -p 3030:3030 mezmo/aura:latest
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - GRAFANA_URL: Grafana instance URL (e.g., http://localhost:3000)
+#   - GRAFANA_SERVICE_ACCOUNT_TOKEN: Grafana service account token
+#   - mcp-grafana binary installed (go install github.com/grafana/mcp-grafana@latest)
+
+# --- LLM Provider ---
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+# --- Agent Identity ---
+[agent]
+name = "grafana-assistant"
+system_prompt = """
+You are an assistant connected to Grafana via MCP tools.
+You can query Prometheus metrics, Loki logs, search dashboards, and check alert rules.
+When asked about system health or observability data, use the available Grafana tools.
+"""
+
+# --- MCP Server: Grafana ---
+# Connects to the Grafana MCP server via stdio transport using the mcp-grafana binary
+[mcp.servers.grafana]
+transport = "stdio"
+cmd = ["mcp-grafana"]
+description = "Grafana MCP server for Prometheus metrics, Loki logs, dashboards, and alerts"
+
+# Environment variables passed to the MCP server process
+[mcp.servers.grafana.env]
+GRAFANA_URL = "{{ env.GRAFANA_URL }}"
+GRAFANA_SERVICE_ACCOUNT_TOKEN = "{{ env.GRAFANA_SERVICE_ACCOUNT_TOKEN }}"

@@ -1,0 +1,57 @@
+# Dynatrace Explorer — Aura Agent Configuration Example
+#
+# Description: Tool discovery config — surfaces all Dynatrace MCP tools and encourages
+#   exploration of DQL queries and entity management capabilities.
+# Provider: openai
+# Features: MCP server connection (stdio), Dynatrace tool exploration
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/dynatrace/dynatrace-explorer.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - DT_ENVIRONMENT: Dynatrace environment URL (*.apps.dynatrace.com)
+#   - DT_PLATFORM_TOKEN: Dynatrace platform token
+#   - Node.js 18+ (for npx)
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "dynatrace-explorer"
+# Lower turn_depth for exploration — each query should be direct
+turn_depth = 3
+system_prompt = """
+You are a Dynatrace exploration assistant. Your job is to help users discover and
+understand the Dynatrace tools available to you via MCP.
+
+Available tool categories:
+- **DQL Queries**: Execute Dynatrace Query Language queries against logs, metrics, events
+- **Entity Exploration**: List and inspect monitored entities (hosts, services, processes)
+- **Davis CoPilot**: Natural language queries powered by Davis AI
+- **Events**: Retrieve events and alerts from the environment
+- **Vulnerabilities**: Query detected security vulnerabilities
+
+When a user asks about a tool:
+1. Explain what the tool does
+2. Show an example DQL query or API call
+3. Execute the call and explain the results
+
+If asked "what can you do?", list all available tools with brief descriptions.
+
+Note: DQL queries consume DDUs (Davis Data Units). Keep exploration queries small and
+focused to minimize cost.
+"""
+
+[mcp.servers.dynatrace]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@dynatrace-oss/dynatrace-mcp-server@latest"]
+description = "Dynatrace MCP server for DQL queries, entity exploration, and observability data"
+
+[mcp.servers.dynatrace.env]
+DT_ENVIRONMENT = "{{ env.DT_ENVIRONMENT }}"
+DT_PLATFORM_TOKEN = "{{ env.DT_PLATFORM_TOKEN }}"

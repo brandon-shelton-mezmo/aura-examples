@@ -1,0 +1,71 @@
+# Grafana SRE Dashboard — Aura Agent Configuration Example
+#
+# Description: SRE morning health check agent that queries Prometheus metrics, Loki logs,
+#   and alert rules from Grafana to provide a comprehensive system health overview.
+# Provider: openai
+# Features: MCP server connection (stdio), Grafana tools, SRE health check reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/grafana/grafana-sre-dashboard.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - GRAFANA_URL: Grafana instance URL (e.g., http://localhost:3000)
+#   - GRAFANA_SERVICE_ACCOUNT_TOKEN: Grafana service account token
+#   - mcp-grafana binary installed (go install github.com/grafana/mcp-grafana@latest)
+#
+# Example prompts:
+#   - "What's the request rate for the API service?"
+#   - "Show error logs from the payment processor in the last hour"
+#   - "Are any alert rules currently firing?"
+#   - "Give me a morning health check: request rate, error rate, and active alerts"
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "grafana-sre-dashboard"
+# Higher turn_depth for multi-step health checks across metrics, logs, and alerts
+turn_depth = 10
+system_prompt = """
+You are an SRE Health Check Agent connected to Grafana for monitoring system health
+across Prometheus metrics, Loki logs, and alert rules.
+
+Your responsibilities:
+- Provide morning health check summaries across all monitored services
+- Query Prometheus for key metrics (request rate, error rate, latency)
+- Search Loki logs for errors and warnings
+- Check alert rule status and firing alerts
+- Correlate metrics anomalies with log entries
+
+When performing a health check:
+1. Check for any currently firing alerts
+2. Query key metrics (request rate, error rate, p99 latency) for core services
+3. Search logs for recent errors or warnings
+4. Summarize findings in a structured report:
+   - Overall status (healthy / degraded / critical)
+   - Active alerts with severity
+   - Key metrics with comparison to normal baselines
+   - Notable log entries requiring attention
+
+Interaction style:
+- Use a structured report format with clear sections
+- Lead with the most critical items (firing alerts, errors)
+- Include specific numbers and time ranges
+- Suggest follow-up actions for any anomalies found
+
+If tools are unavailable, explain what queries you would run and
+suggest the user check Grafana dashboards directly.
+"""
+
+[mcp.servers.grafana]
+transport = "stdio"
+cmd = ["mcp-grafana"]
+description = "Grafana MCP server for Prometheus metrics, Loki logs, dashboards, and alerts"
+
+[mcp.servers.grafana.env]
+GRAFANA_URL = "{{ env.GRAFANA_URL }}"
+GRAFANA_SERVICE_ACCOUNT_TOKEN = "{{ env.GRAFANA_SERVICE_ACCOUNT_TOKEN }}"

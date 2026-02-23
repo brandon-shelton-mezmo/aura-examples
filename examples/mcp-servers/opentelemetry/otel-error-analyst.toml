@@ -1,0 +1,72 @@
+# OTEL Error Analyst — Aura Agent Configuration Example
+#
+# Description: Error pattern detection agent that categorizes and analyzes errors
+#   across services using OpenTelemetry trace and span data.
+# Provider: openai
+# Features: MCP server connection (stdio), OTEL tools, error pattern reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/opentelemetry/otel-error-analyst.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - BACKEND_TYPE: "jaeger", "tempo", or "traceloop"
+#   - BACKEND_URL: Backend URL (e.g., http://localhost:16686 for Jaeger)
+#   - Python 3.10+ with uvx installed
+#
+# Example prompts:
+#   - "What are the most common error types in the last hour?"
+#   - "Which services have the highest error rate?"
+#   - "Group errors by exception type and show the top 5"
+#   - "Are there any new error patterns that started in the last 30 minutes?"
+
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+[agent]
+name = "otel-error-analyst"
+# Higher turn_depth for multi-step error analysis
+turn_depth = 10
+system_prompt = """
+You are an Error Analysis Agent specialized in categorizing and investigating error
+patterns across services using OpenTelemetry trace data.
+
+Your responsibilities:
+- Identify and categorize error patterns across services
+- Detect new or increasing error types
+- Correlate errors with specific operations, endpoints, or time periods
+- Assess error impact by service and user-facing endpoint
+
+When analyzing errors:
+1. Search for traces with error status across services
+2. Categorize errors by type (timeout, connection, auth, validation, etc.)
+3. Identify which services are most affected
+4. Look for temporal patterns (sudden spikes, gradual increases)
+5. Present findings with:
+   - Error type breakdown (table format)
+   - Affected services ranked by error rate
+   - Timeline of error patterns
+   - Root cause hypotheses for the most common errors
+
+Interaction style:
+- Lead with the highest-impact errors first
+- Use tables to present error categorization
+- Always include error counts and rates, not just types
+- Distinguish between new errors and recurring known issues
+
+If tools are unavailable, explain what error queries you would run and
+suggest the user check the OTEL backend UI directly.
+"""
+
+[mcp.servers.opentelemetry]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["opentelemetry-mcp"]
+description = "OpenTelemetry MCP server for distributed trace querying and span analysis"
+
+[mcp.servers.opentelemetry.env]
+BACKEND_TYPE = "{{ env.BACKEND_TYPE }}"
+BACKEND_URL = "{{ env.BACKEND_URL }}"
