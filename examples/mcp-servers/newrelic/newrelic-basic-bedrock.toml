@@ -1,0 +1,52 @@
+# New Relic Basic (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Minimal New Relic MCP integration — connects an aura agent to New Relic's
+#   remote-hosted MCP server for running NRQL queries and exploring entities.
+#   No local package installation needed — uses http_streamable transport.
+# Provider: bedrock
+# Features: MCP server connection (http_streamable), New Relic NRQL and entity tools
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/newrelic/newrelic-basic-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+#   # or with Docker:
+#   docker run -v $(pwd)/examples/mcp-servers/newrelic/newrelic-basic-bedrock.toml:/app/config.toml \
+#     -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+#     -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+#     -e NEW_RELIC_API_KEY=$NEW_RELIC_API_KEY \
+#     -p 3030:3030 mezmo/aura:latest
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - NEW_RELIC_API_KEY: New Relic User API key (NRAK-xxx)
+#   - New Relic account with MCP access (preview feature)
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+# --- Agent Identity ---
+[agent]
+name = "newrelic-assistant"
+system_prompt = """
+You are an assistant connected to New Relic via MCP tools.
+You can run NRQL queries, search entities, retrieve golden metrics, and check alerts.
+When asked about application performance or system health, use the available New Relic tools.
+"""
+
+# --- MCP Server: New Relic ---
+# Connects to New Relic's remote-hosted MCP server via http_streamable transport.
+# No local package needed — the MCP server runs on New Relic's infrastructure.
+# The Api-Key header authenticates requests using the New Relic User API key.
+[mcp.servers.newrelic]
+transport = "http_streamable"
+url = "https://mcp.newrelic.com/mcp/"
+description = "New Relic MCP server for NRQL queries, entity search, and golden metrics"
+
+# Authentication via API key header
+[mcp.servers.newrelic.headers]
+Api-Key = "{{ env.NEW_RELIC_API_KEY }}"

@@ -1,0 +1,75 @@
+# Dynatrace K8s Ops (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Kubernetes operations agent that monitors K8s events, entity health,
+#   pod status, and security vulnerabilities using Dynatrace's observability data.
+# Provider: bedrock
+# Features: MCP server connection (stdio), Dynatrace tools, K8s monitoring reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/dynatrace/dynatrace-k8s-ops-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - DT_ENVIRONMENT: Dynatrace environment URL (*.apps.dynatrace.com)
+#   - DT_PLATFORM_TOKEN: Dynatrace platform token
+#   - Node.js 18+ (for npx)
+#   - Dynatrace must be monitoring your K8s cluster(s)
+#
+# Example prompts:
+#   - "Show recent warning events from the production K8s cluster"
+#   - "Which pods have restarted more than 3 times today?"
+#   - "List critical vulnerabilities detected in the last 30 days"
+#   - "What's the health status of all Kubernetes namespaces?"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "dynatrace-k8s-ops"
+# Higher turn_depth for multi-step K8s investigation
+turn_depth = 10
+system_prompt = """
+You are a Kubernetes Operations Agent specialized in monitoring K8s cluster health
+and security using Dynatrace's observability data.
+
+Your responsibilities:
+- Monitor K8s events (pod restarts, OOM kills, scheduling failures)
+- Track entity health for clusters, namespaces, deployments, and pods
+- Identify security vulnerabilities in container images
+- Correlate K8s events with application-level metrics
+
+When investigating K8s health:
+1. Query recent events for the target cluster or namespace
+2. Check entity health for deployments and pods
+3. Look for patterns in pod restarts or failures
+4. Check for security vulnerabilities if relevant
+5. Present findings with:
+   - Cluster/namespace health overview
+   - Critical events requiring attention
+   - Pod restart patterns and root causes
+   - Security vulnerability summary (if applicable)
+
+Interaction style:
+- Use tables for entity health summaries
+- Highlight critical events with clear severity indicators
+- Group findings by namespace or deployment
+- Suggest DQL queries users can run for deeper investigation
+
+If tools are unavailable, explain what K8s queries you would run in DQL
+and suggest the user check the Dynatrace Kubernetes app directly.
+"""
+
+[mcp.servers.dynatrace]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@dynatrace-oss/dynatrace-mcp-server@latest"]
+description = "Dynatrace MCP server for DQL queries, entity exploration, and K8s monitoring"
+
+[mcp.servers.dynatrace.env]
+DT_ENVIRONMENT = "{{ env.DT_ENVIRONMENT }}"
+DT_PLATFORM_TOKEN = "{{ env.DT_PLATFORM_TOKEN }}"

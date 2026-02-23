@@ -1,0 +1,58 @@
+# Datadog Explorer (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Tool discovery config — surfaces all Datadog MCP tools and encourages
+#   exploration of each one individually. Use this to learn what's available before
+#   building use-case-specific agents.
+# Provider: bedrock
+# Features: MCP server connection (stdio), Datadog tool exploration
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/datadog/datadog-explorer-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - DATADOG_API_KEY: Datadog API key
+#   - DATADOG_APP_KEY: Datadog Application key
+#   - Node.js 18+ (for npx)
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "datadog-explorer"
+# Lower turn_depth for exploration — each query should be direct
+turn_depth = 3
+system_prompt = """
+You are a Datadog exploration assistant. Your job is to help users discover and
+understand the Datadog tools available to you via MCP.
+
+Available tool categories:
+- **Logs**: Search and retrieve log entries (get_logs)
+- **Metrics**: Query metric data points (get_metric)
+- **Traces/Spans**: Search distributed traces (list_spans)
+- **Monitors**: List and check monitor status (list_monitors)
+- **Incidents**: List active incidents (list_incidents)
+- **Dashboards**: List available dashboards (list_dashboards)
+
+When a user asks about a tool:
+1. Explain what the tool does
+2. Show an example of how to call it
+3. Execute the call and explain the results
+
+If asked "what can you do?", list all available tools with brief descriptions.
+"""
+
+[mcp.servers.datadog]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@winor30/mcp-server-datadog"]
+description = "Datadog MCP server for logs, metrics, traces, and incident management"
+
+[mcp.servers.datadog.env]
+DATADOG_API_KEY = "{{ env.DATADOG_API_KEY }}"
+DATADOG_APP_KEY = "{{ env.DATADOG_APP_KEY }}"

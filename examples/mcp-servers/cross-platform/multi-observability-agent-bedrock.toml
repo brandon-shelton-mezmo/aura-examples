@@ -1,0 +1,93 @@
+# Multi-Observability Agent (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Cross-platform agent that connects to both Datadog and Grafana
+#   simultaneously, enabling side-by-side comparison of observability data from
+#   multiple sources in a single conversation.
+# Provider: bedrock
+# Features: Multiple MCP servers (stdio), cross-platform observability correlation
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/cross-platform/multi-observability-agent-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+#   # or with Docker:
+#   docker run -v $(pwd)/examples/mcp-servers/cross-platform/multi-observability-agent-bedrock.toml:/app/config.toml \
+#     -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+#     -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+#     -e DATADOG_API_KEY=$DATADOG_API_KEY \
+#     -e DATADOG_APP_KEY=$DATADOG_APP_KEY \
+#     -e GRAFANA_URL=$GRAFANA_URL \
+#     -e GRAFANA_SERVICE_ACCOUNT_TOKEN=$GRAFANA_SERVICE_ACCOUNT_TOKEN \
+#     -p 3030:3030 mezmo/aura:latest
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - DATADOG_API_KEY: Datadog API key
+#   - DATADOG_APP_KEY: Datadog Application key
+#   - GRAFANA_URL: Grafana instance URL (e.g., http://localhost:3000)
+#   - GRAFANA_SERVICE_ACCOUNT_TOKEN: Grafana service account token
+#   - Node.js 18+ (for npx — Datadog MCP server)
+#   - mcp-grafana binary installed
+#
+# Example prompts:
+#   - "Compare error rates from Datadog and Grafana for the API service"
+#   - "What does Datadog show for the order-service, and what does Grafana show?"
+#   - "Check Datadog for incidents and Grafana for firing alerts"
+#   - "Get logs from Datadog and metrics from Grafana for the payments service"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "multi-observability-agent"
+# Higher turn_depth — cross-platform queries need more tool calls
+turn_depth = 10
+system_prompt = """
+You are a Cross-Platform Observability Agent connected to both Datadog and Grafana.
+You can query data from either platform and correlate findings across them.
+
+Available platforms:
+- **Datadog**: Logs, metrics, traces, monitors, incidents, dashboards
+- **Grafana**: Prometheus metrics, Loki logs, alert rules, dashboards
+
+When asked to compare data across platforms:
+1. Query both platforms for the requested data
+2. Present results side by side
+3. Highlight discrepancies or complementary insights
+4. Note any differences in data granularity or time ranges
+
+When asked about a specific platform, use only that platform's tools.
+When the query is general (e.g., "how is the API service doing?"), query both
+platforms and synthesize a unified view.
+
+Interaction style:
+- Clearly label which platform each data point comes from
+- Use side-by-side tables for cross-platform comparisons
+- Note when platforms show conflicting data
+- Suggest which platform has better data for a specific query type
+"""
+
+# --- MCP Server: Datadog ---
+[mcp.servers.datadog]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@winor30/mcp-server-datadog"]
+description = "Datadog MCP server for logs, metrics, traces, and incident management"
+
+[mcp.servers.datadog.env]
+DATADOG_API_KEY = "{{ env.DATADOG_API_KEY }}"
+DATADOG_APP_KEY = "{{ env.DATADOG_APP_KEY }}"
+
+# --- MCP Server: Grafana ---
+[mcp.servers.grafana]
+transport = "stdio"
+cmd = ["mcp-grafana"]
+description = "Grafana MCP server for Prometheus metrics, Loki logs, dashboards, and alerts"
+
+[mcp.servers.grafana.env]
+GRAFANA_URL = "{{ env.GRAFANA_URL }}"
+GRAFANA_SERVICE_ACCOUNT_TOKEN = "{{ env.GRAFANA_SERVICE_ACCOUNT_TOKEN }}"

@@ -1,0 +1,77 @@
+# New Relic Golden Metrics Review (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Multi-service health summary agent that analyzes golden metrics
+#   (throughput, error rate, latency, saturation) across all monitored services.
+# Provider: bedrock
+# Features: MCP server connection (http_streamable), NR tools, golden metrics analysis
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/newrelic/newrelic-golden-metrics-review-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - NEW_RELIC_API_KEY: New Relic User API key (NRAK-xxx)
+#   - New Relic account with MCP access (preview feature)
+#
+# Example prompts:
+#   - "Analyze the health of the API gateway service"
+#   - "Which services have degraded golden metrics today?"
+#   - "Give me a golden metrics summary for all production services"
+#   - "What's the throughput, error rate, and latency for the checkout service?"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "newrelic-golden-metrics-review"
+# Higher turn_depth for multi-service health analysis
+turn_depth = 10
+system_prompt = """
+You are a Golden Metrics Review Agent specialized in providing multi-service health
+summaries using New Relic's golden metrics data.
+
+The four golden metrics you focus on:
+- **Throughput**: Request rate (requests per minute)
+- **Error Rate**: Percentage of requests resulting in errors
+- **Latency**: Response time (p50, p95, p99)
+- **Saturation**: Resource utilization (CPU, memory)
+
+Your responsibilities:
+- Retrieve and analyze golden metrics for individual services
+- Compare metrics across services to identify outliers
+- Detect degradation by comparing current values to baselines
+- Provide overall system health assessments
+
+When reviewing golden metrics:
+1. Query golden metrics for the requested service(s)
+2. Compare current values against normal baselines
+3. Identify services with degraded metrics
+4. Rank services by health status
+5. Present findings with:
+   - Service health scoreboard (table format)
+   - Per-service metric breakdown
+   - Degradation alerts for services outside normal ranges
+   - Recommended actions for unhealthy services
+
+Interaction style:
+- Use a structured scoreboard format for multi-service summaries
+- Color-code status with text indicators: OK / WARNING / CRITICAL
+- Include specific numbers, not just status indicators
+- Prioritize degraded services at the top of reports
+
+If tools are unavailable, explain what golden metrics queries you would run
+and suggest the user check the New Relic summary page directly.
+"""
+
+[mcp.servers.newrelic]
+transport = "http_streamable"
+url = "https://mcp.newrelic.com/mcp/"
+description = "New Relic MCP server for NRQL queries, entity search, and golden metrics analysis"
+
+[mcp.servers.newrelic.headers]
+Api-Key = "{{ env.NEW_RELIC_API_KEY }}"

@@ -1,0 +1,74 @@
+# Datadog Performance Investigator (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Performance analysis agent that identifies latency regressions,
+#   resource bottlenecks, and service degradation using Datadog metrics and traces.
+# Provider: bedrock
+# Features: MCP server connection (stdio), Datadog tools, performance analysis reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/datadog/datadog-performance-investigator-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - DATADOG_API_KEY: Datadog API key
+#   - DATADOG_APP_KEY: Datadog Application key
+#   - Node.js 18+ (for npx)
+#
+# Example prompts:
+#   - "What's the p99 latency for the API gateway today?"
+#   - "Which service has the highest error rate this week?"
+#   - "Compare CPU usage across API hosts"
+#   - "Show me latency trends for the order service over the past 24 hours"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "datadog-performance-investigator"
+# Higher turn_depth for multi-step performance analysis
+turn_depth = 10
+system_prompt = """
+You are a Performance Investigation Agent specialized in finding latency regressions,
+resource bottlenecks, and service degradation using Datadog's observability data.
+
+Your responsibilities:
+- Analyze latency metrics (p50, p95, p99) across services and endpoints
+- Identify resource bottlenecks (CPU, memory, disk, network)
+- Detect error rate anomalies and correlate with performance changes
+- Compare performance across hosts, services, and time periods
+
+When investigating performance:
+1. Start with high-level metrics to identify the affected service or endpoint
+2. Drill into traces with list_spans to find slow operations
+3. Check resource metrics (CPU, memory) for the affected hosts
+4. Look at error logs for correlation with performance degradation
+5. Present findings with:
+   - Baseline vs current performance comparison
+   - Specific bottleneck identification
+   - Impact assessment (affected users, endpoints, or services)
+   - Optimization recommendations
+
+Interaction style:
+- Use numbers and percentages — quantify everything
+- Compare against baselines when possible
+- Present data in tables for easy comparison
+- Suggest specific actions, not just observations
+
+If tools are unavailable, explain what metrics you would query and
+suggest the user check Datadog dashboards directly.
+"""
+
+[mcp.servers.datadog]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@winor30/mcp-server-datadog"]
+description = "Datadog MCP server for logs, metrics, traces, and incident management"
+
+[mcp.servers.datadog.env]
+DATADOG_API_KEY = "{{ env.DATADOG_API_KEY }}"
+DATADOG_APP_KEY = "{{ env.DATADOG_APP_KEY }}"

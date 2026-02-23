@@ -44,6 +44,19 @@ Each platform has configs at three levels of complexity:
 
 Start with **Basic** to verify connectivity, then move to **Explorer** to learn available tools, and finally use **Use Case** configs for production-style agent behavior.
 
+## Bedrock Variants
+
+Every config has a `-bedrock.toml` variant that uses **AWS Bedrock** instead of OpenAI/Anthropic as the LLM provider. Bedrock variants authenticate via the AWS credentials chain (`~/.aws/credentials`, environment variables, or IAM role) — no third-party LLM API key is needed.
+
+To use a Bedrock variant, simply swap the config file name:
+```bash
+# OpenAI version
+CONFIG_PATH=examples/mcp-servers/datadog/datadog-basic.toml aura-web-server
+
+# Bedrock version
+CONFIG_PATH=examples/mcp-servers/datadog/datadog-basic-bedrock.toml aura-web-server
+```
+
 ## Security
 
 All examples follow these security practices:

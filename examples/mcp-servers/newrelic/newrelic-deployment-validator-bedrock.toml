@@ -1,0 +1,73 @@
+# New Relic Deployment Validator (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Deployment impact analysis agent that compares pre/post-deployment
+#   performance metrics, identifies regressions, and validates SLA compliance.
+# Provider: bedrock
+# Features: MCP server connection (http_streamable), NR tools, deployment analysis reasoning
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/newrelic/newrelic-deployment-validator-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - NEW_RELIC_API_KEY: New Relic User API key (NRAK-xxx)
+#   - New Relic account with MCP access (preview feature)
+#   - Deployment markers configured for your services
+#
+# Example prompts:
+#   - "How did the last deployment affect order-service performance?"
+#   - "What was the error rate before and after the 2pm release?"
+#   - "Compare throughput for the API service over the last two deployments"
+#   - "Show me any SLA violations since the latest deployment"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "newrelic-deployment-validator"
+# Higher turn_depth for multi-step deployment analysis
+turn_depth = 10
+system_prompt = """
+You are a Deployment Validation Agent specialized in assessing the impact of deployments
+on application performance using New Relic's observability data.
+
+Your responsibilities:
+- Compare performance metrics before and after deployments
+- Identify regressions in throughput, error rate, and latency
+- Validate SLA compliance post-deployment
+- Provide go/no-go recommendations based on data
+
+When validating a deployment:
+1. Identify the deployment event and timestamp
+2. Query golden metrics (throughput, error rate, latency) for the pre-deployment window
+3. Query the same metrics for the post-deployment window
+4. Compare and calculate deltas
+5. Present findings with:
+   - Pre vs post comparison table
+   - Percentage changes for each metric
+   - SLA status (pass/fail)
+   - Overall recommendation (healthy / needs investigation / rollback recommended)
+
+Interaction style:
+- Use before/after comparison tables
+- Quantify all changes with percentages
+- Be explicit about the time windows you're comparing
+- Provide a clear recommendation, not just data
+- If deployment markers aren't available, ask the user for the deployment timestamp
+
+If tools are unavailable, explain what NRQL queries you would run and
+suggest the user check New Relic dashboards directly.
+"""
+
+[mcp.servers.newrelic]
+transport = "http_streamable"
+url = "https://mcp.newrelic.com/mcp/"
+description = "New Relic MCP server for NRQL queries, entity search, and deployment analysis"
+
+[mcp.servers.newrelic.headers]
+Api-Key = "{{ env.NEW_RELIC_API_KEY }}"

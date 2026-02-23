@@ -6,16 +6,21 @@ Connect an aura agent to New Relic's remote-hosted MCP server for querying appli
 
 - **New Relic account** with MCP access (preview feature — [request access](https://newrelic.com/platform/ai))
 - **New Relic User API key** (NOT ingest key or license key)
+- **LLM provider credentials:** OpenAI API key (default configs) or AWS credentials (Bedrock variants)
 - **Environment variables:**
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for the LLM provider |
+| `OPENAI_API_KEY` | Yes (default configs) | OpenAI API key for the LLM provider |
 | `NEW_RELIC_API_KEY` | Yes | New Relic User API key ([create here](https://one.newrelic.com/api-keys)) |
 
 ```bash
+# For default (OpenAI) configs:
 export OPENAI_API_KEY="your-openai-key"
 export NEW_RELIC_API_KEY="NRAK-xxxxxxxxxxxxxxxxxxxx"
+
+# For Bedrock variants: configure AWS credentials instead of OPENAI_API_KEY
+# (via ~/.aws/credentials, environment variables, or IAM role)
 ```
 
 ### RBAC Note
@@ -34,12 +39,16 @@ Uses New Relic's remote MCP endpoint at `https://mcp.newrelic.com/mcp/` (http_st
 
 ## Configs
 
-| Config | Tier | Description |
-|--------|------|-------------|
-| `newrelic-basic.toml` | Basic | Minimal remote MCP connection — proves NR tools are accessible |
-| `newrelic-explorer.toml` | Explorer | Tool discovery mode — exercises each NR tool individually |
-| `newrelic-deployment-validator.toml` | Use Case | Deployment impact analysis persona |
-| `newrelic-golden-metrics-review.toml` | Use Case | Multi-service health summary via golden metrics |
+| Config | Tier | Provider | Description |
+|--------|------|----------|-------------|
+| `newrelic-basic.toml` | Basic | OpenAI | Minimal remote MCP connection — proves NR tools are accessible |
+| `newrelic-basic-bedrock.toml` | Basic | Bedrock | Same as above, using AWS Bedrock (no LLM API key needed) |
+| `newrelic-explorer.toml` | Explorer | OpenAI | Tool discovery mode — exercises each NR tool individually |
+| `newrelic-explorer-bedrock.toml` | Explorer | Bedrock | Same as above, using AWS Bedrock |
+| `newrelic-deployment-validator.toml` | Use Case | OpenAI | Deployment impact analysis persona |
+| `newrelic-deployment-validator-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
+| `newrelic-golden-metrics-review.toml` | Use Case | OpenAI | Multi-service health summary via golden metrics |
+| `newrelic-golden-metrics-review-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
 
 ## Running
 

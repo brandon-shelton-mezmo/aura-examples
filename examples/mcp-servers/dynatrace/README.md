@@ -7,21 +7,26 @@ Connect an aura agent to Dynatrace for running DQL queries, exploring entities, 
 - **Dynatrace SaaS environment** (must be `*.apps.dynatrace.com`)
 - **Node.js 18+** (for `npx` to run the MCP server)
 - **Dynatrace platform token** with appropriate scopes
+- **LLM provider credentials:** OpenAI API key, Anthropic API key, or AWS credentials (Bedrock variants)
 - **Environment variables:**
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes* | OpenAI API key (used by most configs) |
+| `OPENAI_API_KEY` | Yes* | OpenAI API key (used by most default configs) |
 | `ANTHROPIC_API_KEY` | Yes* | Anthropic API key (used by NL query config) |
 | `DT_ENVIRONMENT` | Yes | Dynatrace environment URL (must be `*.apps.dynatrace.com`) |
 | `DT_PLATFORM_TOKEN` | Yes | Dynatrace platform token |
 
-*Only one LLM provider key is needed — check the specific config file.
+*Only one LLM provider key is needed — check the specific config file. Bedrock variants need AWS credentials instead.
 
 ```bash
+# For default (OpenAI/Anthropic) configs:
 export OPENAI_API_KEY="your-openai-key"
 export DT_ENVIRONMENT="https://your-env.apps.dynatrace.com"
 export DT_PLATFORM_TOKEN="dt0c01.xxxxxxxx.yyyyyyyy"
+
+# For Bedrock variants: configure AWS credentials instead of LLM API keys
+# (via ~/.aws/credentials, environment variables, or IAM role)
 ```
 
 ### Creating a Dynatrace Platform Token
@@ -48,9 +53,13 @@ Uses the official [`@dynatrace-oss/dynatrace-mcp-server`](https://www.npmjs.com/
 | Config | Tier | Provider | Description |
 |--------|------|----------|-------------|
 | `dynatrace-basic.toml` | Basic | OpenAI | Minimal MCP connection — proves Dynatrace tools are accessible |
+| `dynatrace-basic-bedrock.toml` | Basic | Bedrock | Same as above, using AWS Bedrock (no LLM API key needed) |
 | `dynatrace-explorer.toml` | Explorer | OpenAI | Tool discovery mode — exercises DQL and entity tools |
+| `dynatrace-explorer-bedrock.toml` | Explorer | Bedrock | Same as above, using AWS Bedrock |
 | `dynatrace-natural-language-query.toml` | Use Case | **Anthropic** | NL-to-DQL conversion + Davis CoPilot integration |
+| `dynatrace-natural-language-query-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
 | `dynatrace-k8s-ops.toml` | Use Case | OpenAI | K8s event monitoring and entity health persona |
+| `dynatrace-k8s-ops-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
 
 ## Running
 

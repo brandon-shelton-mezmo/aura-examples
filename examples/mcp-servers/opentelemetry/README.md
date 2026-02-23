@@ -6,18 +6,23 @@ Connect an aura agent to OpenTelemetry backends (Jaeger, Grafana Tempo, Traceloo
 
 - **Python 3.10+** with `uvx` ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **An OTEL-compatible backend** (Jaeger, Grafana Tempo, or Traceloop)
+- **LLM provider credentials:** OpenAI API key (default configs) or AWS credentials (Bedrock variants)
 - **Environment variables:**
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for the LLM provider |
+| `OPENAI_API_KEY` | Yes (default configs) | OpenAI API key for the LLM provider |
 | `BACKEND_TYPE` | Yes | Backend type: `jaeger`, `tempo`, or `traceloop` |
 | `BACKEND_URL` | Yes | Backend URL (e.g., `http://localhost:16686` for Jaeger) |
 
 ```bash
+# For default (OpenAI) configs:
 export OPENAI_API_KEY="your-openai-key"
 export BACKEND_TYPE="jaeger"
 export BACKEND_URL="http://localhost:16686"
+
+# For Bedrock variants: configure AWS credentials instead of OPENAI_API_KEY
+# (via ~/.aws/credentials, environment variables, or IAM role)
 ```
 
 ### Backend-Specific Setup
@@ -47,12 +52,16 @@ Uses the [`opentelemetry-mcp`](https://pypi.org/project/opentelemetry-mcp/) pack
 
 ## Configs
 
-| Config | Tier | Description |
-|--------|------|-------------|
-| `otel-basic.toml` | Basic | Minimal OTEL MCP connection with Jaeger backend |
-| `otel-explorer.toml` | Explorer | Tool discovery mode — exercises each trace tool individually |
-| `otel-trace-investigator.toml` | Use Case | Distributed trace debugging persona |
-| `otel-error-analyst.toml` | Use Case | Error pattern detection and categorization persona |
+| Config | Tier | Provider | Description |
+|--------|------|----------|-------------|
+| `otel-basic.toml` | Basic | OpenAI | Minimal OTEL MCP connection with Jaeger backend |
+| `otel-basic-bedrock.toml` | Basic | Bedrock | Same as above, using AWS Bedrock (no LLM API key needed) |
+| `otel-explorer.toml` | Explorer | OpenAI | Tool discovery mode — exercises each trace tool individually |
+| `otel-explorer-bedrock.toml` | Explorer | Bedrock | Same as above, using AWS Bedrock |
+| `otel-trace-investigator.toml` | Use Case | OpenAI | Distributed trace debugging persona |
+| `otel-trace-investigator-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
+| `otel-error-analyst.toml` | Use Case | OpenAI | Error pattern detection and categorization persona |
+| `otel-error-analyst-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
 
 ## Running
 

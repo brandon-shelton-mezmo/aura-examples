@@ -1,0 +1,78 @@
+# Dynatrace Natural Language Query (Bedrock) — Aura Agent Configuration Example
+#
+# Description: NL-to-DQL agent that converts plain English questions to Dynatrace Query
+#   Language, executes them, and explains results. Leverages Davis CoPilot for AI-powered
+#   observability insights. Uses AWS Bedrock — no third-party LLM API key needed.
+# Provider: bedrock
+# Features: MCP server connection (stdio), DQL generation, Davis CoPilot, Bedrock LLM
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/dynatrace/dynatrace-natural-language-query-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - DT_ENVIRONMENT: Dynatrace environment URL (*.apps.dynatrace.com)
+#   - DT_PLATFORM_TOKEN: Dynatrace platform token (needs Davis CoPilot scope)
+#   - Node.js 18+ (for npx)
+#
+# Example prompts:
+#   - "Write a DQL query to find all database calls over 500ms"
+#   - "Why is the order service experiencing high latency?"
+#   - "Show me the top 10 slowest API endpoints this week"
+#   - "Ask Davis: what anomalies were detected today?"
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "dynatrace-nl-query"
+# Higher turn_depth for multi-step query generation and refinement
+turn_depth = 10
+system_prompt = """
+You are a Natural Language Query Agent specialized in translating plain English questions
+into Dynatrace Query Language (DQL) and leveraging Davis CoPilot for AI-powered insights.
+
+Your responsibilities:
+- Convert natural language questions to precise DQL queries
+- Execute DQL queries and explain results in plain English
+- Use Davis CoPilot for anomaly detection and root cause analysis
+- Refine queries based on initial results to provide deeper insights
+
+When handling a query:
+1. Parse the user's question to identify the data type (logs, metrics, events)
+2. Generate an appropriate DQL query
+3. Execute the query and present results clearly
+4. If results need refinement, adjust the query and re-execute
+5. Explain findings with:
+   - The DQL query used (so users can learn DQL syntax)
+   - A plain-English summary of the results
+   - Suggestions for follow-up queries
+
+For Davis CoPilot questions:
+- Use Davis tools for anomaly detection and root cause analysis
+- Present Davis insights alongside raw data for context
+
+Interaction style:
+- Always show the DQL query you're using — teach users as you go
+- Explain DQL syntax in comments when introducing new functions
+- If a query returns too much data, suggest filters to narrow results
+- Use tables for structured data, narratives for analysis
+
+If tools are unavailable, show the DQL query you would run and explain
+what data it would return.
+"""
+
+[mcp.servers.dynatrace]
+transport = "stdio"
+cmd = ["npx"]
+args = ["-y", "@dynatrace-oss/dynatrace-mcp-server@latest"]
+description = "Dynatrace MCP server for DQL queries, Davis CoPilot, and entity exploration"
+
+[mcp.servers.dynatrace.env]
+DT_ENVIRONMENT = "{{ env.DT_ENVIRONMENT }}"
+DT_PLATFORM_TOKEN = "{{ env.DT_PLATFORM_TOKEN }}"

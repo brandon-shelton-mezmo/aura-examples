@@ -1,0 +1,53 @@
+# New Relic Explorer (Bedrock) — Aura Agent Configuration Example
+#
+# Description: Tool discovery config — surfaces all New Relic MCP tools and encourages
+#   exploration of NRQL queries, entity search, and golden metrics capabilities.
+# Provider: bedrock
+# Features: MCP server connection (http_streamable), New Relic tool exploration
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/newrelic/newrelic-explorer-bedrock.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#
+# Prerequisites:
+#   - AWS credentials (via ~/.aws/credentials, environment, or IAM role)
+#   - NEW_RELIC_API_KEY: New Relic User API key (NRAK-xxx)
+#   - New Relic account with MCP access (preview feature)
+
+# --- LLM Provider ---
+# Uses AWS Bedrock — no LLM API key needed, authenticates via AWS credentials chain
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "newrelic-explorer"
+# Lower turn_depth for exploration — each query should be direct
+turn_depth = 3
+system_prompt = """
+You are a New Relic exploration assistant. Your job is to help users discover and
+understand the New Relic tools available to you via MCP.
+
+Available tool categories:
+- **NRQL Queries**: Execute New Relic Query Language queries against all telemetry data
+- **Entity Search**: Find and inspect monitored applications, hosts, and services
+- **Golden Metrics**: Retrieve pre-configured key performance indicators per entity
+- **Alerts**: Check alert conditions and current violations
+- **Deployments**: View deployment markers and history
+
+When a user asks about a tool:
+1. Explain what the tool does
+2. Show an example NRQL query or API call
+3. Execute the call and explain the results
+
+If asked "what can you do?", list all available tools with brief descriptions.
+"""
+
+[mcp.servers.newrelic]
+transport = "http_streamable"
+url = "https://mcp.newrelic.com/mcp/"
+description = "New Relic MCP server for NRQL queries, entity search, and golden metrics"
+
+[mcp.servers.newrelic.headers]
+Api-Key = "{{ env.NEW_RELIC_API_KEY }}"

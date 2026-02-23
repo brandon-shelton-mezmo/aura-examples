@@ -6,20 +6,25 @@ Connect an aura agent to Datadog for querying logs, metrics, traces, monitors, i
 
 - **Datadog account** with API and Application keys
 - **Node.js 18+** (for `npx` to run the MCP server)
+- **LLM provider credentials:** OpenAI API key (default configs) or AWS credentials (Bedrock variants)
 - **Environment variables:**
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for the LLM provider |
+| `OPENAI_API_KEY` | Yes (default configs) | OpenAI API key for the LLM provider |
 | `DATADOG_API_KEY` | Yes | Datadog API key ([create here](https://app.datadoghq.com/organization-settings/api-keys)) |
 | `DATADOG_APP_KEY` | Yes | Datadog Application key ([create here](https://app.datadoghq.com/organization-settings/application-keys)) |
 | `DATADOG_SITE` | No | Datadog site (defaults to `datadoghq.com`; use `datadoghq.eu` for EU) |
 
 ```bash
+# For default (OpenAI) configs:
 export OPENAI_API_KEY="your-openai-key"
 export DATADOG_API_KEY="your-datadog-api-key"
 export DATADOG_APP_KEY="your-datadog-app-key"
 # export DATADOG_SITE="datadoghq.eu"  # Only if using EU site
+
+# For Bedrock variants: configure AWS credentials instead of OPENAI_API_KEY
+# (via ~/.aws/credentials, environment variables, or IAM role)
 ```
 
 ## MCP Server
@@ -30,12 +35,16 @@ Uses the community [`@winor30/mcp-server-datadog`](https://www.npmjs.com/package
 
 ## Configs
 
-| Config | Tier | Description |
-|--------|------|-------------|
-| `datadog-basic.toml` | Basic | Minimal MCP connection — proves Datadog tools are accessible |
-| `datadog-explorer.toml` | Explorer | Tool discovery mode — exercises each Datadog tool individually |
-| `datadog-incident-responder.toml` | Use Case | Incident investigation persona with multi-step reasoning |
-| `datadog-performance-investigator.toml` | Use Case | Latency and regression analysis persona |
+| Config | Tier | Provider | Description |
+|--------|------|----------|-------------|
+| `datadog-basic.toml` | Basic | OpenAI | Minimal MCP connection — proves Datadog tools are accessible |
+| `datadog-basic-bedrock.toml` | Basic | Bedrock | Same as above, using AWS Bedrock (no LLM API key needed) |
+| `datadog-explorer.toml` | Explorer | OpenAI | Tool discovery mode — exercises each Datadog tool individually |
+| `datadog-explorer-bedrock.toml` | Explorer | Bedrock | Same as above, using AWS Bedrock |
+| `datadog-incident-responder.toml` | Use Case | OpenAI | Incident investigation persona with multi-step reasoning |
+| `datadog-incident-responder-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
+| `datadog-performance-investigator.toml` | Use Case | OpenAI | Latency and regression analysis persona |
+| `datadog-performance-investigator-bedrock.toml` | Use Case | Bedrock | Same as above, using AWS Bedrock |
 
 ## Running
 
