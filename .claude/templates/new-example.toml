@@ -1,0 +1,44 @@
+# [EXAMPLE_NAME] — Aura Agent Configuration Example
+#
+# Description: [Brief description of what this example demonstrates]
+# Provider: [openai | anthropic | bedrock | gemini | ollama]
+# Features: [List of aura features demonstrated]
+#
+# Usage:
+#   CONFIG_PATH=examples/[category]/[name].toml cargo run --bin aura-web-server
+#   # or with Docker:
+#   docker run -v $(pwd)/examples/[category]/[name].toml:/app/config.toml mezmo/aura:latest
+#
+# Prerequisites:
+#   - [List required env vars, services, etc.]
+
+[llm]
+provider = "[PROVIDER]"
+model = "[MODEL]"
+# api_key = "{{ env.OPENAI_API_KEY }}"  # Use env var resolution
+
+[agent]
+name = "[AGENT_NAME]"
+system_prompt = """
+[SYSTEM_PROMPT]
+"""
+# temperature = 0.7
+# max_tokens = 4096
+# turn_depth = 10
+
+# --- MCP Server Configuration ---
+# Uncomment and configure as needed:
+#
+# [mcp.servers.example]
+# transport = "http_streamable"  # or "sse" or "stdio"
+# url = "http://localhost:8080"
+# headers_from_request = ["Authorization"]
+
+# --- Vector Store / RAG Configuration ---
+# Uncomment for RAG-enabled examples:
+#
+# [[vector_stores]]
+# type = "in_memory"
+# [vector_stores.embedding]
+# provider = "openai"
+# model = "text-embedding-3-small"

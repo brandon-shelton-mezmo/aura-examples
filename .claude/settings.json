@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/doc-check.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/review-check.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+# Claude Code ephemeral files
+.claude/plans/ctx-*
+.claude/plans/phase1-*
+.claude/plans/phase4-*
+.playwright-screenshots/
+
+# Secrets — never commit API keys
+.env
+.env.local
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
