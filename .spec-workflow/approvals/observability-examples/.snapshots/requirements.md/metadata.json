@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/observability-examples/requirements.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2026-02-23T14:53:43.763Z",
+      "trigger": "initial",
+      "approvalId": "approval_1771858423762_a2joa8rl3",
+      "approvalTitle": "Observability Examples - Requirements"
+    }
+  ]
+}
