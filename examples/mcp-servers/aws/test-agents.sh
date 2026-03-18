@@ -36,16 +36,20 @@ case "${1}" in
   start-servers)
     echo "Starting MCP servers..."
 
-    # Start AWS API MCP server (HTTP mode)
+    # Start AWS API MCP server via mcp-proxy (persistent connection, reliable)
     if lsof -i :$AWS_MCP_PORT >/dev/null 2>&1; then
       echo "  AWS MCP already running on port $AWS_MCP_PORT"
     else
-      AWS_API_MCP_TRANSPORT=streamable-http \
-      AWS_API_MCP_PORT=$AWS_MCP_PORT \
-      AUTH_TYPE=no-auth \
-      READ_OPERATIONS_ONLY=true \
-      "$HOME/.local/bin/awslabs.aws-api-mcp-server" > /tmp/aws-mcp.log 2>&1 &
-      echo "  AWS MCP server starting on port $AWS_MCP_PORT (pid $!)"
+      uvx mcp-proxy \
+        --transport streamablehttp \
+        --host 127.0.0.1 \
+        --port $AWS_MCP_PORT \
+        -e READ_OPERATIONS_ONLY true \
+        -e AWS_REGION "$AWS_REGION" \
+        -e AWS_ACCESS_KEY_ID "$AWS_ACCESS_KEY_ID" \
+        -e AWS_SECRET_ACCESS_KEY "$AWS_SECRET_ACCESS_KEY" \
+        -- "$HOME/.local/bin/awslabs.aws-api-mcp-server" > /tmp/aws-mcp.log 2>&1 &
+      echo "  AWS MCP server starting on port $AWS_MCP_PORT via mcp-proxy (pid $!)"
     fi
 
     # Start Qdrant MCP server (HTTP mode)
@@ -89,7 +93,7 @@ case "${1}" in
 
   stop-servers)
     echo "Stopping MCP servers..."
-    pkill -f "awslabs.aws-api-mcp-server" 2>/dev/null && echo "  Stopped AWS MCP" || echo "  AWS MCP not running"
+    pkill -f "mcp-proxy" 2>/dev/null && echo "  Stopped AWS MCP (mcp-proxy)" || echo "  AWS MCP not running"
     pkill -f "mcp-server-qdrant" 2>/dev/null && echo "  Stopped Qdrant MCP" || echo "  Qdrant MCP not running"
     ;;
 
