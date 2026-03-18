@@ -23,7 +23,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AURA_BIN="${AURA_BIN:-$HOME/Documents/GitHub/aura/target/release/aura-web-server}"
 AURA_PORT=8080
-AWS_MCP_PORT=8090
+AWS_MCP_PORT=8091
 QDRANT_MCP_PORT=8000
 
 # Pull AWS credentials from CLI config if not set
@@ -46,7 +46,6 @@ case "${1}" in
       READ_OPERATIONS_ONLY=true \
       "$HOME/.local/bin/awslabs.aws-api-mcp-server" > /tmp/aws-mcp.log 2>&1 &
       echo "  AWS MCP server starting on port $AWS_MCP_PORT (pid $!)"
-      sleep 3
     fi
 
     # Start Qdrant MCP server (HTTP mode)
@@ -57,15 +56,33 @@ case "${1}" in
       COLLECTION_NAME=aws_resources \
       "$HOME/.local/bin/mcp-server-qdrant" --transport streamable-http > /tmp/qdrant-mcp.log 2>&1 &
       echo "  Qdrant MCP server starting on port $QDRANT_MCP_PORT (pid $!)"
-      sleep 3
     fi
 
-    # Verify
+    # Wait for servers to be ready (warm up)
     echo ""
-    echo "Checking connections:"
-    curl -sf http://localhost:$AWS_MCP_PORT/mcp >/dev/null 2>&1 && echo "  ✓ AWS MCP:    http://localhost:$AWS_MCP_PORT/mcp" || echo "  ✗ AWS MCP:    NOT RESPONDING (check /tmp/aws-mcp.log)"
-    curl -sf http://localhost:$QDRANT_MCP_PORT/mcp >/dev/null 2>&1 && echo "  ✓ Qdrant MCP: http://localhost:$QDRANT_MCP_PORT/mcp" || echo "  ✗ Qdrant MCP: NOT RESPONDING (check /tmp/qdrant-mcp.log)"
-    curl -sf http://localhost:6333/ >/dev/null 2>&1 && echo "  ✓ Qdrant DB:  http://localhost:6333" || echo "  ✗ Qdrant DB:  NOT RUNNING (start with: docker run -d -p 6333:6333 qdrant/qdrant)"
+    echo "Waiting for servers to be ready..."
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      AWS_OK=0; QDRANT_OK=0
+      curl -sf -o /dev/null -X POST "http://localhost:$AWS_MCP_PORT/mcp" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json, text/event-stream" \
+        -d '{"jsonrpc":"2.0","id":0,"method":"ping"}' 2>/dev/null && AWS_OK=1
+      curl -sf -o /dev/null -X POST "http://localhost:$QDRANT_MCP_PORT/mcp" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json, text/event-stream" \
+        -d '{"jsonrpc":"2.0","id":0,"method":"ping"}' 2>/dev/null && QDRANT_OK=1
+      if [ "$AWS_OK" = "1" ] && [ "$QDRANT_OK" = "1" ]; then
+        break
+      fi
+      echo "  Attempt $i/10 — waiting 3s..."
+      sleep 3
+    done
+
+    echo ""
+    echo "Service status:"
+    curl -sf -o /dev/null "http://localhost:6333/" 2>/dev/null && echo "  ✓ Qdrant DB:  http://localhost:6333" || echo "  ✗ Qdrant DB:  NOT RUNNING (start with: docker run -d -p 6333:6333 qdrant/qdrant)"
+    curl -sf -o /dev/null -X POST "http://localhost:$AWS_MCP_PORT/mcp" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":0,"method":"ping"}' 2>/dev/null && echo "  ✓ AWS MCP:    http://localhost:$AWS_MCP_PORT/mcp" || echo "  ✗ AWS MCP:    NOT RESPONDING (check /tmp/aws-mcp.log)"
+    curl -sf -o /dev/null -X POST "http://localhost:$QDRANT_MCP_PORT/mcp" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":0,"method":"ping"}' 2>/dev/null && echo "  ✓ Qdrant MCP: http://localhost:$QDRANT_MCP_PORT/mcp" || echo "  ✗ Qdrant MCP: NOT RESPONDING (check /tmp/qdrant-mcp.log)"
     echo ""
     echo "Ready. Run: ./test-agents.sh run <config-file>"
     ;;

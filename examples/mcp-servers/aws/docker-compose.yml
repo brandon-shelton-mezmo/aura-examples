@@ -28,15 +28,21 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
-  # --- AWS API MCP Server (HTTP mode) ---
+  # --- AWS API MCP Server (HTTP mode, port 8091) ---
   # Provides call_aws and suggest_aws_commands tools.
   # READ_OPERATIONS_ONLY=true enforces read-only at the server level.
-  # Runs on port 8090, aura connects via http_streamable transport.
+  # Aura connects via http_streamable transport.
   aws-mcp:
     image: python:3.12-slim
     ports:
-      - "8090:8090"
+      - "8091:8091"
     environment:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
@@ -44,19 +50,19 @@ services:
       - AWS_SESSION_TOKEN
       - READ_OPERATIONS_ONLY=true
       - AWS_API_MCP_TRANSPORT=streamable-http
-      - AWS_API_MCP_PORT=8090
+      - AWS_API_MCP_PORT=8091
       - AUTH_TYPE=no-auth
     command: >
       bash -c "pip install -q awslabs.aws-api-mcp-server &&
       awslabs.aws-api-mcp-server"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/mcp')"]
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8091/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}' || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 45s
 
-  # --- Qdrant MCP Server (HTTP mode) ---
+  # --- Qdrant MCP Server (HTTP mode, port 8000) ---
   # Provides qdrant-store (write) and qdrant-find (search) tools.
   # Uses built-in FastEmbed for embeddings — no OpenAI key needed.
   # Connects to the Qdrant database above.
@@ -71,11 +77,19 @@ services:
       bash -c "pip install -q mcp-server-qdrant &&
       mcp-server-qdrant --transport streamable-http"
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8000/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # --- Aura Agent ---
   # The AI agent that connects to the MCP servers above.
   # Default config: discovery agent. Change the volume mount to switch agents.
+  # Waits for both MCP servers to be healthy before starting.
   aura:
     image: mezmo/aura:latest
     ports:
@@ -84,15 +98,17 @@ services:
       - ./aws-discovery-agent.toml:/app/config.toml
     environment:
       # MCP server URLs — point to the Docker service names
-      - AWS_MCP_URL=http://aws-mcp:8090/mcp
+      - AWS_MCP_URL=http://aws-mcp:8091/mcp
       - QDRANT_MCP_URL=http://qdrant-mcp:8000/mcp
       # AWS credentials for Bedrock LLM calls
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_REGION=${AWS_REGION:-us-east-1}
     depends_on:
-      - aws-mcp
-      - qdrant-mcp
+      aws-mcp:
+        condition: service_healthy
+      qdrant-mcp:
+        condition: service_healthy
 
 # Persistent volume — Qdrant data survives container restarts.
 # Use "docker compose down -v" to delete and start fresh.
