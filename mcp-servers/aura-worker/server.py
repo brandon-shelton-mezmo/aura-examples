@@ -1,0 +1,198 @@
+"""
+Aura Worker MCP Server
+
+An MCP server that wraps aura's /v1/chat/completions API, allowing an orchestrator
+agent to delegate work to worker agent instances. Supports both sequential and
+parallel task execution.
+
+The orchestrator agent uses this as a tool: "send this prompt to a worker agent."
+Each worker call gets a fresh aura request with a clean context window, solving
+the context accumulation problem for large discovery scans.
+
+Usage:
+    # Install dependencies
+    pip install mcp[cli] httpx
+
+    # Run in stdio mode (for aura stdio transport)
+    python server.py
+
+    # Run in HTTP mode (for aura http_streamable transport)
+    python server.py --transport streamable-http --port 8095
+
+    # Configure worker URL
+    AURA_WORKER_URL=http://localhost:8080 python server.py
+
+Environment Variables:
+    AURA_WORKER_URL     Base URL of the worker aura instance (default: http://localhost:8080)
+    WORKER_TIMEOUT      Timeout in seconds for each worker request (default: 180)
+    MAX_PARALLEL        Maximum parallel worker requests (default: 10)
+"""
+
+import asyncio
+import json
+import os
+import time
+from typing import Optional
+
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+# Configuration
+AURA_WORKER_URL = os.getenv("AURA_WORKER_URL", "http://localhost:8080")
+WORKER_TIMEOUT = int(os.getenv("WORKER_TIMEOUT", "180"))
+MAX_PARALLEL = int(os.getenv("MAX_PARALLEL", "10"))
+
+server = FastMCP("aura-worker-mcp")
+
+
+async def _call_worker(prompt: str, worker_url: str, timeout: int) -> dict:
+    """Send a prompt to a worker aura instance and return the result."""
+    start = time.time()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            f"{worker_url}/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": prompt}]},
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    elapsed = round(time.time() - start, 1)
+    content = data["choices"][0]["message"]["content"]
+    tokens = data.get("usage", {})
+
+    return {
+        "content": content,
+        "tokens": tokens.get("total_tokens", 0),
+        "elapsed_seconds": elapsed,
+    }
+
+
+@server.tool()
+async def run_agent(
+    prompt: str,
+    worker_url: Optional[str] = None,
+) -> str:
+    """Send a task to a worker aura agent and return its response.
+
+    Use this to delegate a focused piece of work (e.g., "Discover all S3 buckets
+    and store them in the knowledge base") to a worker agent. The worker gets a
+    fresh context window, so it won't be affected by prior tool call results in
+    your conversation.
+
+    Args:
+        prompt: The instruction to send to the worker agent. Be specific about
+                what to discover, what CLI commands to use, and to store results
+                in qdrant with collection_name 'aws_resources'.
+        worker_url: Optional override for the worker aura URL.
+                    Defaults to AURA_WORKER_URL environment variable.
+    """
+    url = worker_url or AURA_WORKER_URL
+    try:
+        result = await _call_worker(prompt, url, WORKER_TIMEOUT)
+        return (
+            f"Worker completed in {result['elapsed_seconds']}s "
+            f"({result['tokens']} tokens):\n\n{result['content']}"
+        )
+    except httpx.TimeoutException:
+        return f"Worker timed out after {WORKER_TIMEOUT}s. The task may have been too large. Try breaking it into smaller pieces."
+    except httpx.HTTPStatusError as e:
+        return f"Worker returned error {e.response.status_code}: {e.response.text[:500]}"
+    except Exception as e:
+        return f"Worker error: {str(e)}"
+
+
+@server.tool()
+async def run_agents_parallel(
+    prompts: list[str],
+    worker_url: Optional[str] = None,
+) -> str:
+    """Send multiple tasks to worker agents in parallel and return all responses.
+
+    Use this when you have several independent discovery tasks that can run
+    simultaneously. Each task gets its own worker with a fresh context window.
+    Results are returned in the same order as the prompts.
+
+    Example prompts:
+        ["Discover VPCs and store in KB", "Discover EC2 and store in KB", "Discover S3 and store in KB"]
+
+    Args:
+        prompts: List of instructions to send to worker agents in parallel.
+                 Maximum {MAX_PARALLEL} parallel tasks.
+        worker_url: Optional override for the worker aura URL.
+    """
+    url = worker_url or AURA_WORKER_URL
+
+    if len(prompts) > MAX_PARALLEL:
+        return f"Too many parallel tasks ({len(prompts)}). Maximum is {MAX_PARALLEL}."
+
+    if not prompts:
+        return "No prompts provided."
+
+    start = time.time()
+
+    # Run all tasks in parallel
+    tasks = [_call_worker(prompt, url, WORKER_TIMEOUT) for prompt in prompts]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    elapsed = round(time.time() - start, 1)
+    total_tokens = 0
+    succeeded = 0
+    failed = 0
+    output_parts = []
+
+    for i, result in enumerate(results):
+        task_label = f"Task {i + 1}/{len(prompts)}"
+        if isinstance(result, Exception):
+            failed += 1
+            output_parts.append(f"### {task_label}: FAILED\nError: {str(result)}\n")
+        else:
+            succeeded += 1
+            total_tokens += result["tokens"]
+            output_parts.append(
+                f"### {task_label}: OK ({result['elapsed_seconds']}s, {result['tokens']} tokens)\n"
+                f"{result['content']}\n"
+            )
+
+    summary = (
+        f"## Parallel Execution Summary\n"
+        f"- Tasks: {len(prompts)} ({succeeded} succeeded, {failed} failed)\n"
+        f"- Total time: {elapsed}s (parallel)\n"
+        f"- Total tokens: {total_tokens}\n\n"
+    )
+
+    return summary + "\n".join(output_parts)
+
+
+@server.tool()
+async def check_worker(
+    worker_url: Optional[str] = None,
+) -> str:
+    """Check if a worker aura instance is running and responsive.
+
+    Use this before sending tasks to verify the worker is available.
+
+    Args:
+        worker_url: Optional override for the worker aura URL.
+    """
+    url = worker_url or AURA_WORKER_URL
+    try:
+        result = await _call_worker("Say 'ready' and nothing else.", url, 30)
+        return f"Worker at {url} is ready ({result['elapsed_seconds']}s response time)"
+    except Exception as e:
+        return f"Worker at {url} is not responding: {str(e)}"
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Aura Worker MCP Server")
+    args = parser.parse_args()
+
+    # Always run in stdio mode — use mcp-proxy to expose as HTTP if needed:
+    #   mcp-proxy --transport streamablehttp --port 8095 -- python server.py
+    server.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()
