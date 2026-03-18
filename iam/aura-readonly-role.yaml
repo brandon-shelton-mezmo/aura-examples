@@ -1,0 +1,215 @@
+# =============================================================================
+# Aura AWS Discovery Agent - Read-Only IAM Role
+# =============================================================================
+#
+# Purpose:
+#   Deploys a read-only IAM role for the aura AWS discovery agent. This role
+#   grants the agent permission to enumerate and describe AWS resources across
+#   the account without any write or mutating access.
+#
+# Security note:
+#   Secret values are intentionally excluded from this policy.
+#   secretsmanager:GetSecretValue and ssm:GetParameter are NOT granted.
+#   The agent can list and describe secrets/parameters (metadata only) but
+#   cannot retrieve their actual values.
+#
+# Deploy:
+#   aws cloudformation deploy \
+#     --template-file iam/aura-readonly-role.yaml \
+#     --stack-name aura-discovery-role \
+#     --capabilities CAPABILITY_NAMED_IAM
+#
+# To disable Bedrock permissions:
+#   aws cloudformation deploy \
+#     --template-file iam/aura-readonly-role.yaml \
+#     --stack-name aura-discovery-role \
+#     --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides EnableBedrock=false
+# =============================================================================
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Read-only IAM role for the aura AWS discovery agent. Grants describe/list
+  access to common AWS services. Optionally includes Bedrock invoke permissions.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: aura-discovery-role
+    Description: Name of the IAM role to create.
+
+  EnableBedrock:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether to attach Bedrock invoke permissions to the role.
+
+Conditions:
+  BedrockEnabled: !Equals [!Ref EnableBedrock, "true"]
+
+Resources:
+  AuraDiscoveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: aura-discovery-readonly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: STSAccess
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
+              - Sid: EC2ReadOnly
+                Effect: Allow
+                Action:
+                  - ec2:Describe*
+                Resource: "*"
+              - Sid: ECSReadOnly
+                Effect: Allow
+                Action:
+                  - ecs:Describe*
+                  - ecs:List*
+                Resource: "*"
+              - Sid: LambdaReadOnly
+                Effect: Allow
+                Action:
+                  - lambda:List*
+                  - lambda:GetFunction
+                  - lambda:GetPolicy
+                Resource: "*"
+              - Sid: RDSReadOnly
+                Effect: Allow
+                Action:
+                  - rds:Describe*
+                Resource: "*"
+              - Sid: DynamoDBReadOnly
+                Effect: Allow
+                Action:
+                  - dynamodb:Describe*
+                  - dynamodb:List*
+                Resource: "*"
+              - Sid: S3ReadOnly
+                Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketTagging
+                  - s3:GetEncryptionConfiguration
+                Resource: "*"
+              - Sid: IAMReadOnly
+                Effect: Allow
+                Action:
+                  - iam:List*
+                  - iam:GetRole
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                Resource: "*"
+              - Sid: ELBReadOnly
+                Effect: Allow
+                Action:
+                  - elasticloadbalancing:Describe*
+                Resource: "*"
+              - Sid: Route53ReadOnly
+                Effect: Allow
+                Action:
+                  - route53:List*
+                  - route53:GetHostedZone
+                Resource: "*"
+              - Sid: CloudFrontReadOnly
+                Effect: Allow
+                Action:
+                  - cloudfront:List*
+                  - cloudfront:GetDistribution
+                Resource: "*"
+              - Sid: SQSReadOnly
+                Effect: Allow
+                Action:
+                  - sqs:List*
+                  - sqs:GetQueueAttributes
+                Resource: "*"
+              - Sid: SNSReadOnly
+                Effect: Allow
+                Action:
+                  - sns:List*
+                  - sns:GetTopicAttributes
+                Resource: "*"
+              - Sid: CloudFormationReadOnly
+                Effect: Allow
+                Action:
+                  - cloudformation:Describe*
+                  - cloudformation:List*
+                Resource: "*"
+              - Sid: CloudWatchReadOnly
+                Effect: Allow
+                Action:
+                  - cloudwatch:Describe*
+                  - cloudwatch:List*
+                Resource: "*"
+              - Sid: CloudWatchLogsReadOnly
+                Effect: Allow
+                Action:
+                  - logs:Describe*
+                Resource: "*"
+              - Sid: SecretsManagerMetadataOnly
+                Effect: Allow
+                Action:
+                  - secretsmanager:ListSecrets
+                  - secretsmanager:DescribeSecret
+                Resource: "*"
+              - Sid: SSMMetadataOnly
+                Effect: Allow
+                Action:
+                  - ssm:DescribeParameters
+                Resource: "*"
+              - Sid: EKSReadOnly
+                Effect: Allow
+                Action:
+                  - eks:Describe*
+                  - eks:List*
+                Resource: "*"
+      Tags:
+        - Key: Purpose
+          Value: aura-discovery-agent
+        - Key: ManagedBy
+          Value: cloudformation
+
+  AuraBedrockPolicy:
+    Type: AWS::IAM::Policy
+    Condition: BedrockEnabled
+    Properties:
+      PolicyName: aura-discovery-bedrock
+      Roles:
+        - !Ref AuraDiscoveryRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BedrockInvoke
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: ARN of the aura discovery IAM role.
+    Value: !GetAtt AuraDiscoveryRole.Arn
+
+  RoleName:
+    Description: Name of the aura discovery IAM role.
+    Value: !Ref AuraDiscoveryRole

@@ -1,0 +1,95 @@
+# AWS Knowledge Base Query Agent — Aura Configuration
+#
+# Queries a previously-populated Qdrant knowledge base of AWS resources.
+# Does NOT connect to AWS APIs — only searches existing stored knowledge.
+#
+# IMPORTANT: You must run the discovery agent first to populate the knowledge base.
+#   See: examples/mcp-servers/aws/aws-discovery-agent.toml
+#
+# This agent has only ONE MCP server (Qdrant) for searching the knowledge base.
+# It cannot discover new resources — it answers questions about what was already found.
+#
+# Provider: AWS Bedrock (Claude Sonnet 4, all traffic stays in AWS)
+# Features: Qdrant semantic search, knowledge base Q&A, relationship tracing
+#
+# Prerequisites:
+#   - Qdrant running at localhost:6333 with a populated 'aws_resources' collection
+#   - AWS credentials configured (for Bedrock LLM access only — not for AWS API queries)
+#   - Python uvx available (for MCP server installation)
+#
+# Usage:
+#   export AWS_REGION=us-east-1
+#   CONFIG_PATH=examples/rag/aws-knowledge-base/aws-kb-query-agent.toml aura-web-server
+#
+#   Then ask: "What ECS services are running?" or "Show me all resources in vpc-abc123"
+#
+# Docker:
+#   docker run -v $(pwd)/examples/rag/aws-knowledge-base/aws-kb-query-agent.toml:/app/config.toml \
+#     -e AWS_REGION=$AWS_REGION -e QDRANT_URL=http://host.docker.internal:6333 \
+#     -p 3030:3030 mezmo/aura:latest
+
+# --- LLM Provider ---
+# AWS Bedrock keeps all LLM traffic within AWS. Uses IAM credential chain.
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
+
+# --- Agent Configuration ---
+[agent]
+name = "aws-kb-query-agent"
+temperature = 0.5            # Moderate temp — factual answers with natural phrasing
+turn_depth = 5               # Multiple searches to trace relationships across resources
+
+system_prompt = """
+You are an AWS Infrastructure Knowledge Agent. You have access to a knowledge base
+of previously discovered AWS resources stored in Qdrant.
+
+Answer questions about the AWS environment by searching the knowledge base with
+qdrant-find. You do NOT have access to live AWS APIs — only the stored knowledge.
+
+## How to Answer Questions
+
+1. **Search first** — Use qdrant-find to search the knowledge base for relevant resources.
+2. **Always cite discovery timestamps** — Every stored resource has a discovery timestamp.
+   Include this so the user knows how fresh the data is.
+3. **If data is not found** — Tell the user clearly, and suggest they run the discovery
+   agent (`examples/mcp-servers/aws/aws-discovery-agent.toml`) to scan that service.
+4. **For relationship questions** — Search multiple times with different queries to trace
+   dependency chains. For example, to find what depends on a VPC, search for the VPC,
+   then search for subnets, security groups, instances, and load balancers in that VPC.
+5. **Be clear about freshness** — Distinguish between what is known from the knowledge
+   base vs what may have changed since the last discovery run.
+
+## What You Can NOT Do
+
+- You have NO access to live AWS APIs — do not attempt to call AWS services
+- You cannot discover new resources — only query what was previously stored
+- You cannot modify or update the knowledge base — only search it
+
+## Interaction Style
+
+- Answer concisely but completely
+- Always mention the discovery timestamp for context
+- When results span multiple services, organize by service type
+- If the knowledge base appears empty or sparse, suggest a full discovery scan
+"""
+
+# --- MCP Server: Qdrant (knowledge base query — read-only) ---
+# Official Qdrant MCP server. Provides qdrant-find for semantic search.
+# Uses built-in FastEmbed for embeddings — no OpenAI API key needed.
+# NOTE: Only qdrant is configured here. No AWS API MCP server — this agent
+# queries stored knowledge only. Run the discovery agent first to populate data.
+# Install: uvx mcp-server-qdrant
+[mcp.servers.qdrant]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["mcp-server-qdrant"]
+description = "AWS resource knowledge base (read-only query)"
+
+[mcp.servers.qdrant.env]
+QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
+COLLECTION_NAME = "{{ env.QDRANT_COLLECTION | default: 'aws_resources' }}"
+QDRANT_API_KEY = "{{ env.QDRANT_API_KEY }}"
+TOOL_STORE_DESCRIPTION = "Store a document in the knowledge base. Not typically used by this query agent."
+TOOL_FIND_DESCRIPTION = "Search the AWS resource knowledge base. Use this to find previously discovered resources by semantic query."

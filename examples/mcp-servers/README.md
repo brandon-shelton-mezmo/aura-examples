@@ -11,6 +11,7 @@ Aura agents connect to external tool servers using the [Model Context Protocol (
 | Run Grafana + Prometheus + Loki | [grafana/](grafana/) |
 | Use Dynatrace with DQL | [dynatrace/](dynatrace/) |
 | Use New Relic (no local install needed) | [newrelic/](newrelic/) |
+| Want to discover and catalog your AWS infrastructure | [aws/](aws/) |
 | Want to query multiple platforms at once | [cross-platform/](cross-platform/) |
 
 ## Transport Types

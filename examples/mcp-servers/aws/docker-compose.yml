@@ -1,0 +1,53 @@
+# docker-compose.yml — Qdrant + Aura for AWS Discovery Agent
+#
+# Start the stack:
+#   docker compose up -d
+#
+# View aura logs:
+#   docker compose logs -f aura
+#
+# Switch configs:
+#   Change the volume mount path under the aura service, e.g.:
+#     - ./my-other-config.toml:/app/config.toml
+#
+# Note: The aura image must include Python/uvx to launch MCP servers
+# that use stdio transport (e.g., awslabs.aws-documentation-mcp-server).
+
+version: "3"
+
+services:
+  # Qdrant vector database — stores embeddings for RAG knowledge base.
+  # The REST API on port 6333 is used by the Qdrant MCP server to
+  # index and query vectors.
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"   # REST API (used by Qdrant MCP server)
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # Aura agent — runs the AWS Discovery Agent configuration.
+  # Connects to Qdrant over the internal Docker network via the
+  # QDRANT_URL environment variable.
+  aura:
+    image: mezmo/aura:latest
+    ports:
+      - "3030:3030"
+    volumes:
+      - ./aws-discovery-agent.toml:/app/config.toml
+    environment:
+      # AWS credentials — passed through from the host environment.
+      # Do not hardcode secrets here; export them in your shell before
+      # running docker compose up.
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_REGION
+      # Internal Docker network URL for the Qdrant service above.
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      - qdrant
+
+# Named volume — qdrant_data persists across container restarts and
+# docker compose down. Use "docker compose down -v" to remove it.
+volumes:
+  qdrant_data:

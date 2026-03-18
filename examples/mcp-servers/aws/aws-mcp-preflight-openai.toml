@@ -1,0 +1,166 @@
+# AWS MCP Preflight — Environment Validation & Stack Configuration Advisor
+#
+# Description: Run this BEFORE deploying other agents. It validates your environment
+#   and recommends how to configure the agent stack for your specific AWS setup.
+# Provider: openai (GPT-4o)
+# Features: MCP server validation, AWS credential checks, Qdrant connectivity,
+#   service discovery probes, agent configuration recommendations
+#
+# What it does:
+#   1. Validates MCP server connections (AWS API + Qdrant)
+#   2. Verifies AWS credentials and discovers account/region info
+#   3. Probes which AWS services have resources (quick scan)
+#   4. Tests Qdrant read/write capability
+#   5. Recommends agent configurations based on what it finds
+#
+# Usage:
+#   CONFIG_PATH=examples/mcp-servers/aws/aws-mcp-preflight-openai.toml \
+#     ~/Documents/GitHub/aura/target/release/aura-web-server
+#   Then ask: "Run preflight checks and recommend agent configuration."
+#
+#   # or with Docker:
+#   docker run -v $(pwd)/examples/mcp-servers/aws/aws-mcp-preflight-openai.toml:/app/config.toml \
+#     -e OPENAI_API_KEY=$OPENAI_API_KEY \
+#     -e AWS_REGION=$AWS_REGION \
+#     -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+#     -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+#     -e QDRANT_URL=$QDRANT_URL \
+#     -p 3030:3030 mezmo/aura:latest
+#
+# Prerequisites:
+#   - OPENAI_API_KEY: OpenAI API key
+#   - AWS_REGION: AWS region (defaults to us-east-1)
+#   - AWS_ACCESS_KEY_ID: AWS access key with read permissions
+#   - AWS_SECRET_ACCESS_KEY: AWS secret access key
+#   - QDRANT_URL: Qdrant server URL (defaults to http://localhost:6333)
+#   - QDRANT_COLLECTION: Qdrant collection name (defaults to aws_resources)
+#   - Python/uvx installed (for stdio MCP servers)
+#
+# This config is provider-agnostic by design. The preflight pattern works for
+# any cloud environment — swap the AWS MCP server for GCP/Azure/IBM equivalents.
+
+# --- LLM Provider ---
+# OpenAI with GPT-4o
+[llm]
+provider = "openai"
+model = "gpt-4o"
+api_key = "{{ env.OPENAI_API_KEY }}"
+
+# --- Agent Identity ---
+# Preflight agent: validates environment and recommends configuration
+[agent]
+name = "aws-mcp-preflight"
+temperature = 0.2              # Low temperature for deterministic validation output
+turn_depth = 8                 # Enough for validation + quick probes across services
+max_tokens = 4096
+system_prompt = """
+You are a Preflight Validation Agent for the Aura infrastructure intelligence stack.
+Your job is to validate the environment and recommend how to configure the agent
+ecosystem for this specific AWS setup.
+
+## Preflight Checklist
+
+Run these checks in order and report results:
+
+### 1. MCP Server Validation
+- List all available tools from each connected MCP server
+- For each tool: confirm name, description, and parameters
+- Flag any tools that are missing or unexpected
+
+### 2. AWS Credential Validation
+- Run: aws sts get-caller-identity
+- Report: Account ID, IAM principal (role/user), region
+- Confirm: READ_OPERATIONS_ONLY is enforced (attempt a describe call)
+- Flag: If credentials are missing, expired, or insufficient
+
+### 3. Qdrant Connectivity Validation
+- Attempt a qdrant-store with a test document: "[PREFLIGHT_TEST] connection check"
+- Attempt a qdrant-find for "PREFLIGHT_TEST"
+- Confirm: Both write and read are working
+- Report: Qdrant URL, collection name, embedding model
+
+### 4. Environment Discovery (Quick Probe)
+Run lightweight list commands to detect which services have resources:
+- aws ec2 describe-vpcs (any VPCs?)
+- aws ecs list-clusters (any ECS?)
+- aws lambda list-functions --max-items 1 (any Lambda?)
+- aws rds describe-db-instances (any RDS?)
+- aws s3api list-buckets (any S3?)
+- aws eks list-clusters (any EKS?)
+- aws dynamodb list-tables --limit 1 (any DynamoDB?)
+Report: which services are populated vs empty
+
+### 5. Configuration Recommendations
+Based on what you found, recommend:
+- Which discovery phases are relevant (skip empty services)
+- Recommended turn_depth based on environment size
+- Which specialized agents would be most useful
+- Any environment-specific settings (region, profile, multi-region)
+- Estimated discovery scan time (small/medium/large environment)
+
+## Output Format
+
+```
+PREFLIGHT RESULTS
+=================
+
+MCP Servers:
+  ✓ aws_api: call_aws, suggest_aws_commands [READ_ONLY enforced]
+  ✓ qdrant: qdrant-store, qdrant-find [read/write confirmed]
+
+AWS Environment:
+  Account: 123456789012
+  Region: us-east-1
+  Principal: arn:aws:iam::123456789012:role/aura-discovery-role
+
+Services Detected:
+  ✓ EC2 (3 VPCs, instances present)
+  ✓ ECS (2 clusters)
+  ✓ Lambda (34 functions)
+  ✓ RDS (4 instances)
+  ✗ EKS (no clusters)
+  ✗ DynamoDB (no tables)
+
+Recommendations:
+  Environment Size: MEDIUM (~200 resources estimated)
+  Discovery turn_depth: 15 (recommended)
+  Skip Phases: EKS, DynamoDB (no resources detected)
+  Recommended Agents: Discovery, Change Audit, Incident Response
+  Estimated Full Scan Time: ~10-15 minutes
+```
+
+## Important
+- Do NOT perform full discovery — only quick probes (list with --max-items 1 or similar)
+- Clean up the preflight test document from Qdrant if possible
+- Report any errors clearly with suggested fixes
+"""
+
+# --- MCP Server: AWS API ---
+# Connects to the AWS API MCP server via stdio using uvx
+# READ_OPERATIONS_ONLY ensures the agent cannot mutate AWS resources
+[mcp.servers.aws_api]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["awslabs.aws-api-mcp-server@latest"]
+description = "AWS API MCP server — preflight validation"
+
+# Environment variables passed to the AWS MCP server process
+[mcp.servers.aws_api.env]
+AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
+AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
+AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
+READ_OPERATIONS_ONLY = "true"  # Safety: only read operations allowed
+
+# --- MCP Server: Qdrant ---
+# Connects to Qdrant vector store for knowledge base operations
+# Used in preflight to validate read/write connectivity
+[mcp.servers.qdrant]
+transport = "stdio"
+cmd = ["uvx"]
+args = ["mcp-server-qdrant"]
+description = "Qdrant knowledge base — preflight validation"
+
+# Environment variables passed to the Qdrant MCP server process
+[mcp.servers.qdrant.env]
+QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
+COLLECTION_NAME = "{{ env.QDRANT_COLLECTION | default: 'aws_resources' }}"
