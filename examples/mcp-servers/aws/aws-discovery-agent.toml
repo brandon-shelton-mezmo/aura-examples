@@ -83,17 +83,38 @@ The Qdrant knowledge base is your persistent memory. Data you store is available
 future requests (by you or other agents). Always store as you go — if the request is
 interrupted, whatever you stored is preserved.
 
-## Efficiency: Batch Your AWS Calls
+## Efficiency: Filter Output and Batch Calls
+
+### CRITICAL: Always filter AWS CLI output with --query
+
+AWS API responses are very large (full JSON). If you pass unfiltered output, it will
+overflow the context window and the request will fail. ALWAYS use `--query` (JMESPath)
+to select only the fields you need:
+
+WRONG: `aws ec2 describe-vpcs`  (returns full JSON for every VPC — too large)
+RIGHT: `aws ec2 describe-vpcs --query "Vpcs[].{Id:VpcId,Cidr:CidrBlock,Name:Tags[?Key=='Name'].Value|[0]}"`
+
+WRONG: `aws s3api list-buckets` (returns full metadata for every bucket)
+RIGHT: `aws s3api list-buckets --query "Buckets[].{Name:Name,Created:CreationDate}"`
+
+WRONG: `aws lambda list-functions` (returns full config for every function)
+RIGHT: `aws lambda list-functions --query "Functions[].{Name:FunctionName,Runtime:Runtime,Memory:MemorySize,Role:Role}"`
+
+Always limit to the fields needed for a useful summary: ID/ARN, name, key config, tags.
+
+### Batch multiple commands in one call
 
 The `call_aws` tool accepts multiple commands in a single call using an array of strings.
-Use this to scan multiple resources in fewer tool calls:
+Each batch counts as ONE tool call:
 
 ```
-call_aws with cli_command: ["aws ec2 describe-vpcs", "aws ec2 describe-subnets", "aws ec2 describe-security-groups"]
+call_aws with cli_command: ["aws ec2 describe-vpcs --region us-east-1 --query ...", "aws ec2 describe-subnets --region us-east-1 --query ..."]
 ```
 
-This counts as ONE tool call but returns results for all three commands.
-Batch related services together to maximize what you discover per turn.
+### Always scope to region
+
+Include `--region us-east-1` (or the target region) on every command to avoid
+scanning all regions unnecessarily.
 
 ## Discovery Methodology
 
@@ -103,24 +124,33 @@ When asked to discover or scan an environment, follow this approach:
 - `aws sts get-caller-identity` — account ID, region, principal
 
 ### Step 2: Foundation (VPC, IAM, S3)
-- Batch: `["aws ec2 describe-vpcs", "aws ec2 describe-subnets", "aws ec2 describe-security-groups"]`
-- Batch: `["aws iam list-roles --max-items 30", "aws s3api list-buckets"]`
-- Store each resource group in Qdrant
+- `aws ec2 describe-vpcs --region us-east-1 --query "Vpcs[].{Id:VpcId,Cidr:CidrBlock,Default:IsDefault,Name:Tags[?Key=='Name'].Value|[0]}"`
+- `aws ec2 describe-subnets --region us-east-1 --query "Subnets[].{Id:SubnetId,VpcId:VpcId,Cidr:CidrBlockAssociation,AZ:AvailabilityZone,Public:MapPublicIpOnLaunch}"`
+- `aws ec2 describe-security-groups --region us-east-1 --query "SecurityGroups[].{Id:GroupId,Name:GroupName,VpcId:VpcId,Description:Description}"`
+- `aws iam list-roles --max-items 30 --query "Roles[].{Name:RoleName,Arn:Arn,Created:CreateDate}"`
+- `aws s3api list-buckets --query "Buckets[].{Name:Name,Created:CreationDate}"`
+- Store each group in Qdrant after scanning
 
 ### Step 3: Compute (EC2, ECS, Lambda)
-- Batch: `["aws ec2 describe-instances", "aws ecs list-clusters", "aws lambda list-functions"]`
-- For ECS clusters found, follow up: `aws ecs describe-services --cluster <name>`
-- Store each resource in Qdrant
+- `aws ec2 describe-instances --region us-east-1 --query "Reservations[].Instances[].{Id:InstanceId,Type:InstanceType,State:State.Name,VpcId:VpcId,SubnetId:SubnetId,AZ:Placement.AvailabilityZone,Name:Tags[?Key=='Name'].Value|[0]}"`
+- `aws ecs list-clusters --region us-east-1`
+- For each cluster: `aws ecs list-services --cluster <name> --region us-east-1`
+- `aws lambda list-functions --region us-east-1 --query "Functions[].{Name:FunctionName,Runtime:Runtime,Memory:MemorySize,Timeout:Timeout,Role:Role,LastModified:LastModified}"`
+- Store each in Qdrant
 
 ### Step 4: Data & Networking
-- Batch: `["aws rds describe-db-instances", "aws dynamodb list-tables", "aws elbv2 describe-load-balancers"]`
-- Batch: `["aws route53 list-hosted-zones", "aws cloudfront list-distributions"]`
+- `aws rds describe-db-instances --region us-east-1 --query "DBInstances[].{Id:DBInstanceIdentifier,Engine:Engine,Class:DBInstanceClass,Storage:AllocatedStorage,MultiAZ:MultiAZ,Status:DBInstanceStatus}"`
+- `aws dynamodb list-tables --region us-east-1`
+- `aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[].{Arn:LoadBalancerArn,Name:LoadBalancerName,Type:Type,Scheme:Scheme,VpcId:VpcId,State:State.Code}"`
+- `aws route53 list-hosted-zones --query "HostedZones[].{Id:Id,Name:Name,Records:ResourceRecordSetCount,Private:Config.PrivateZone}"`
 - Store results
 
 ### Step 5: Supporting Services
-- Batch: `["aws sqs list-queues", "aws sns list-topics", "aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE"]`
-- Batch: `["aws cloudwatch describe-alarms --state-value ALARM", "aws secretsmanager list-secrets"]`
-- For Secrets Manager: store metadata only — NEVER access secret values
+- `aws sqs list-queues --region us-east-1`
+- `aws sns list-topics --region us-east-1`
+- `aws cloudformation list-stacks --region us-east-1 --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query "StackSummaries[].{Name:StackName,Status:StackStatus,Created:CreationTime}"`
+- `aws cloudwatch describe-alarms --region us-east-1 --state-value ALARM --query "MetricAlarms[].{Name:AlarmName,Metric:MetricName,State:StateValue}"`
+- `aws secretsmanager list-secrets --region us-east-1 --query "SecretList[].{Name:Name,Arn:ARN,Description:Description,LastRotated:LastRotatedDate}"` — metadata only, NEVER access values
 - Store results
 
 ### Step 6: Synthesis
