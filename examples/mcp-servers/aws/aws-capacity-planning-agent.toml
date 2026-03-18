@@ -195,38 +195,22 @@ context = [
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]
 
-# --- MCP Server: AWS API (read-only infrastructure queries) ---
-# Official AWS Labs MCP server. Executes AWS CLI commands with validation.
-# READ_OPERATIONS_ONLY=true blocks all mutating operations at the server level.
-# Install: uvx awslabs.aws-api-mcp-server@latest
+# --- MCP Server: AWS API (read-only infrastructure discovery) ---
+# Official AWS Labs MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   AWS_REGION=us-east-1 READ_OPERATIONS_ONLY=true AWS_API_MCP_TRANSPORT=streamable-http \
+#     AUTH_TYPE=no-auth awslabs.aws-api-mcp-server
 [mcp.servers.aws_api]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["awslabs.aws-api-mcp-server@latest"]
-description = "AWS API access for capacity and quota analysis (read-only)"
+transport = "http_streamable"
+url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8090/mcp' }}"
+description = "AWS API access for infrastructure discovery (read-only)"
 
-[mcp.servers.aws_api.env]
-AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
-AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
-AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
-READ_OPERATIONS_ONLY = "true"
-# Optional: AWS_SESSION_TOKEN = "{{ env.AWS_SESSION_TOKEN }}"
-# Optional: AWS_API_MCP_PROFILE_NAME = "{{ env.AWS_PROFILE }}"
-
-# --- MCP Server: Qdrant (knowledge base — READ-ONLY for this agent) ---
-# Official Qdrant MCP server. This agent uses qdrant-find (search) ONLY.
-# The knowledge base is populated by the aws-discovery-agent.
-# Uses built-in FastEmbed for embeddings — no OpenAI API key needed.
-# Install: uvx mcp-server-qdrant
+# --- MCP Server: Qdrant (persistent knowledge base) ---
+# Official Qdrant MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
+#     mcp-server-qdrant --transport streamable-http
 [mcp.servers.qdrant]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["mcp-server-qdrant"]
-description = "Knowledge base for searching previously discovered AWS resources (read-only access)"
-
-[mcp.servers.qdrant.env]
-QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
-COLLECTION_NAME = "{{ env.QDRANT_COLLECTION | default: 'aws_resources' }}"
-QDRANT_API_KEY = "{{ env.QDRANT_API_KEY }}"
-TOOL_STORE_DESCRIPTION = "NOT USED by this agent. The capacity planning agent is a read-only consumer of the knowledge base."
-TOOL_FIND_DESCRIPTION = "Search the AWS resource knowledge base for previously discovered resources. Use this to get context before querying AWS APIs for live quota and usage data."
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+description = "Persistent knowledge base for storing and retrieving AWS resource information"

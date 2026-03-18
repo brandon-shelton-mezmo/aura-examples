@@ -221,42 +221,22 @@ context = [
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]
 
-# --- MCP Server: AWS API (read-only incident investigation) ---
-# Official AWS Labs MCP server. Executes AWS CLI commands with validation.
-# READ_OPERATIONS_ONLY=true blocks all mutating operations at the server level.
-# Install: uvx awslabs.aws-api-mcp-server@latest
+# --- MCP Server: AWS API (read-only infrastructure discovery) ---
+# Official AWS Labs MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   AWS_REGION=us-east-1 READ_OPERATIONS_ONLY=true AWS_API_MCP_TRANSPORT=streamable-http \
+#     AUTH_TYPE=no-auth awslabs.aws-api-mcp-server
 [mcp.servers.aws_api]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["awslabs.aws-api-mcp-server@latest"]
-description = "AWS API access for post-mortem investigation (read-only)"
+transport = "http_streamable"
+url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8090/mcp' }}"
+description = "AWS API access for infrastructure discovery (read-only)"
 
-[mcp.servers.aws_api.env]
-AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
-AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
-AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
-READ_OPERATIONS_ONLY = "true"
-# Optional: AWS_SESSION_TOKEN = "{{ env.AWS_SESSION_TOKEN }}"
-# Optional: AWS_API_MCP_PROFILE_NAME = "{{ env.AWS_PROFILE }}"
-
-# --- MCP Server: Qdrant (knowledge base — post-mortem storage + cross-collection queries) ---
-# Official Qdrant MCP server. Provides qdrant-store (write) and qdrant-find (search).
-# Default collection is aws_postmortems for storing completed post-mortem documents.
-# Use collection_name parameter at call time to query other collections:
-#   aws_resources — resource inventory and dependency chains
-#   aws_changes — change records and CloudTrail summaries
-#   aws_manifests — discovery scan metadata
-# Uses built-in FastEmbed for embeddings — no OpenAI API key needed.
-# Install: uvx mcp-server-qdrant
+# --- MCP Server: Qdrant (persistent knowledge base) ---
+# Official Qdrant MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
+#     mcp-server-qdrant --transport streamable-http
 [mcp.servers.qdrant]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["mcp-server-qdrant"]
-description = "Knowledge base for storing post-mortems and querying resource/change history"
-
-[mcp.servers.qdrant.env]
-QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
-COLLECTION_NAME = "aws_postmortems"
-QDRANT_API_KEY = "{{ env.QDRANT_API_KEY }}"
-TOOL_STORE_DESCRIPTION = "Store a post-mortem document in the knowledge base. Default collection is aws_postmortems. Use collection_name parameter to store in other collections."
-TOOL_FIND_DESCRIPTION = "Search the knowledge base. Default searches aws_postmortems. Use collection_name parameter to search aws_resources, aws_changes, or aws_manifests."
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+description = "Persistent knowledge base for storing and retrieving AWS resource information"

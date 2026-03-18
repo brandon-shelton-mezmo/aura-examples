@@ -133,32 +133,22 @@ Recommendations:
 - Report any errors clearly with suggested fixes
 """
 
-# --- MCP Server: AWS API ---
-# Connects to the AWS API MCP server via stdio using uvx
-# READ_OPERATIONS_ONLY ensures the agent cannot mutate AWS resources
+# --- MCP Server: AWS API (read-only infrastructure discovery) ---
+# Official AWS Labs MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   AWS_REGION=us-east-1 READ_OPERATIONS_ONLY=true AWS_API_MCP_TRANSPORT=streamable-http \
+#     AUTH_TYPE=no-auth awslabs.aws-api-mcp-server
 [mcp.servers.aws_api]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["awslabs.aws-api-mcp-server@latest"]
-description = "AWS API MCP server — preflight validation"
+transport = "http_streamable"
+url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8090/mcp' }}"
+description = "AWS API access for infrastructure discovery (read-only)"
 
-# Environment variables passed to the AWS MCP server process
-[mcp.servers.aws_api.env]
-AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
-AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
-AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
-READ_OPERATIONS_ONLY = "true"  # Safety: only read operations allowed
-
-# --- MCP Server: Qdrant ---
-# Connects to Qdrant vector store for knowledge base operations
-# Used in preflight to validate read/write connectivity
+# --- MCP Server: Qdrant (persistent knowledge base) ---
+# Official Qdrant MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
+#     mcp-server-qdrant --transport streamable-http
 [mcp.servers.qdrant]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["mcp-server-qdrant"]
-description = "Qdrant knowledge base — preflight validation"
-
-# Environment variables passed to the Qdrant MCP server process
-[mcp.servers.qdrant.env]
-QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
-COLLECTION_NAME = "{{ env.QDRANT_COLLECTION | default: 'aws_resources' }}"
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+description = "Persistent knowledge base for storing and retrieving AWS resource information"

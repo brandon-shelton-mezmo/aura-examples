@@ -75,21 +75,12 @@ qdrant-find. You do NOT have access to live AWS APIs — only the stored knowled
 - If the knowledge base appears empty or sparse, suggest a full discovery scan
 """
 
-# --- MCP Server: Qdrant (knowledge base query — read-only) ---
-# Official Qdrant MCP server. Provides qdrant-find for semantic search.
-# Uses built-in FastEmbed for embeddings — no OpenAI API key needed.
-# NOTE: Only qdrant is configured here. No AWS API MCP server — this agent
-# queries stored knowledge only. Run the discovery agent first to populate data.
-# Install: uvx mcp-server-qdrant
+# --- MCP Server: Qdrant (persistent knowledge base) ---
+# Official Qdrant MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
+#     mcp-server-qdrant --transport streamable-http
 [mcp.servers.qdrant]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["mcp-server-qdrant"]
-description = "AWS resource knowledge base (read-only query)"
-
-[mcp.servers.qdrant.env]
-QDRANT_URL = "{{ env.QDRANT_URL | default: 'http://localhost:6333' }}"
-COLLECTION_NAME = "{{ env.QDRANT_COLLECTION | default: 'aws_resources' }}"
-QDRANT_API_KEY = "{{ env.QDRANT_API_KEY }}"
-TOOL_STORE_DESCRIPTION = "Store a document in the knowledge base. Not typically used by this query agent."
-TOOL_FIND_DESCRIPTION = "Search the AWS resource knowledge base. Use this to find previously discovered resources by semantic query."
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+description = "Persistent knowledge base for storing and retrieving AWS resource information"

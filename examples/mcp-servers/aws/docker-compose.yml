@@ -1,34 +1,81 @@
-# docker-compose.yml — Qdrant + Aura for AWS Discovery Agent
+# docker-compose.yml — Full AWS Discovery Agent Stack
+#
+# Starts 4 services: Qdrant (database), AWS MCP Server, Qdrant MCP Server, and Aura (agent).
+# MCP servers run in HTTP mode for reliable tool execution.
 #
 # Start the stack:
+#   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-east-1
 #   docker compose up -d
 #
 # View aura logs:
 #   docker compose logs -f aura
 #
-# Switch configs:
+# Switch agent configs:
 #   Change the volume mount path under the aura service, e.g.:
-#     - ./my-other-config.toml:/app/config.toml
+#     - ./aws-change-audit-agent.toml:/app/config.toml
 #
-# Note: The aura image must include Python/uvx to launch MCP servers
-# that use stdio transport (e.g., awslabs.aws-documentation-mcp-server).
-
-version: "3"
+# Stop everything:
+#   docker compose down          (keeps data)
+#   docker compose down -v       (deletes Qdrant data)
 
 services:
-  # Qdrant vector database — stores embeddings for RAG knowledge base.
-  # The REST API on port 6333 is used by the Qdrant MCP server to
-  # index and query vectors.
+  # --- Qdrant Database ---
+  # Persistent vector storage for the knowledge base.
+  # Data survives restarts via the qdrant_data named volume.
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"   # REST API (used by Qdrant MCP server)
+      - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
 
-  # Aura agent — runs the AWS Discovery Agent configuration.
-  # Connects to Qdrant over the internal Docker network via the
-  # QDRANT_URL environment variable.
+  # --- AWS API MCP Server (HTTP mode) ---
+  # Provides call_aws and suggest_aws_commands tools.
+  # READ_OPERATIONS_ONLY=true enforces read-only at the server level.
+  # Runs on port 8090, aura connects via http_streamable transport.
+  aws-mcp:
+    image: python:3.12-slim
+    ports:
+      - "8090:8090"
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_SESSION_TOKEN
+      - READ_OPERATIONS_ONLY=true
+      - AWS_API_MCP_TRANSPORT=streamable-http
+      - AWS_API_MCP_PORT=8090
+      - AUTH_TYPE=no-auth
+    command: >
+      bash -c "pip install -q awslabs.aws-api-mcp-server &&
+      awslabs.aws-api-mcp-server"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/mcp')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # --- Qdrant MCP Server (HTTP mode) ---
+  # Provides qdrant-store (write) and qdrant-find (search) tools.
+  # Uses built-in FastEmbed for embeddings — no OpenAI key needed.
+  # Connects to the Qdrant database above.
+  qdrant-mcp:
+    image: python:3.12-slim
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - COLLECTION_NAME=aws_resources
+    command: >
+      bash -c "pip install -q mcp-server-qdrant &&
+      mcp-server-qdrant --transport streamable-http"
+    depends_on:
+      - qdrant
+
+  # --- Aura Agent ---
+  # The AI agent that connects to the MCP servers above.
+  # Default config: discovery agent. Change the volume mount to switch agents.
   aura:
     image: mezmo/aura:latest
     ports:
@@ -36,18 +83,18 @@ services:
     volumes:
       - ./aws-discovery-agent.toml:/app/config.toml
     environment:
-      # AWS credentials — passed through from the host environment.
-      # Do not hardcode secrets here; export them in your shell before
-      # running docker compose up.
+      # MCP server URLs — point to the Docker service names
+      - AWS_MCP_URL=http://aws-mcp:8090/mcp
+      - QDRANT_MCP_URL=http://qdrant-mcp:8000/mcp
+      # AWS credentials for Bedrock LLM calls
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
-      - AWS_REGION
-      # Internal Docker network URL for the Qdrant service above.
-      - QDRANT_URL=http://qdrant:6333
+      - AWS_REGION=${AWS_REGION:-us-east-1}
     depends_on:
-      - qdrant
+      - aws-mcp
+      - qdrant-mcp
 
-# Named volume — qdrant_data persists across container restarts and
-# docker compose down. Use "docker compose down -v" to remove it.
+# Persistent volume — Qdrant data survives container restarts.
+# Use "docker compose down -v" to delete and start fresh.
 volumes:
   qdrant_data:

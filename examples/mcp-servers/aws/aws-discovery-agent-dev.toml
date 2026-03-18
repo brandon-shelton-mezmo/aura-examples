@@ -149,40 +149,21 @@ context = [
 ]
 
 # --- MCP Server: AWS API (read-only infrastructure discovery) ---
-# Official AWS Labs MCP server. Executes AWS CLI commands with validation.
-# READ_OPERATIONS_ONLY=true blocks all mutating operations at the server level.
-# Install: uvx awslabs.aws-api-mcp-server@latest
+# Official AWS Labs MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   AWS_REGION=us-east-1 READ_OPERATIONS_ONLY=true AWS_API_MCP_TRANSPORT=streamable-http \
+#     AUTH_TYPE=no-auth awslabs.aws-api-mcp-server
 [mcp.servers.aws_api]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["awslabs.aws-api-mcp-server@latest"]
+transport = "http_streamable"
+url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8090/mcp' }}"
 description = "AWS API access for infrastructure discovery (read-only)"
 
-[mcp.servers.aws_api.env]
-AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
-AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
-AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
-READ_OPERATIONS_ONLY = "true"
-# Optional: AWS_SESSION_TOKEN = "{{ env.AWS_SESSION_TOKEN }}"
-# Optional: AWS_API_MCP_PROFILE_NAME = "{{ env.AWS_PROFILE }}"
-
-# --- MCP Server: Qdrant (persistent knowledge base — LOCAL EMBEDDED MODE) ---
-# Official Qdrant MCP server. Provides qdrant-store (write) and qdrant-find (search).
-# Uses built-in FastEmbed for embeddings — no OpenAI API key needed.
-# Uses LOCAL PATH mode — no separate Qdrant server needed!
-# Data persists to the specified directory on your filesystem.
-# For remote Qdrant server mode, replace QDRANT_LOCAL_PATH with:
-#   QDRANT_URL = "http://localhost:6333"
-#   QDRANT_API_KEY = "{{ env.QDRANT_API_KEY }}"
-# Install: uvx mcp-server-qdrant
+# --- MCP Server: Qdrant (persistent knowledge base) ---
+# Official Qdrant MCP server running in HTTP mode.
+# Start separately: see docker-compose.yml or run manually:
+#   QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
+#     mcp-server-qdrant --transport streamable-http
 [mcp.servers.qdrant]
-transport = "stdio"
-cmd = ["uvx"]
-args = ["mcp-server-qdrant"]
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
 description = "Persistent knowledge base for storing and retrieving AWS resource information"
-
-[mcp.servers.qdrant.env]
-QDRANT_LOCAL_PATH = "{{ env.QDRANT_LOCAL_PATH | default: '/tmp/aura-aws-kb' }}"
-COLLECTION_NAME = "aws_resources"
-TOOL_STORE_DESCRIPTION = "Store a discovered AWS resource summary in the knowledge base. Use this for every resource you discover."
-TOOL_FIND_DESCRIPTION = "Search the AWS resource knowledge base. Use this to find previously discovered resources before querying AWS APIs."
