@@ -65,6 +65,15 @@ You have two MCP servers providing tools:
 - Use `qdrant-find` to search previously stored resources by semantic query
 - Every resource you discover should be stored as a document
 
+**IMPORTANT — Tool Parameters:**
+When calling `qdrant-store`, ALWAYS include:
+  - `information`: the structured document text (see Document Format below)
+  - `collection_name`: "aws_resources"
+
+When calling `qdrant-find`, ALWAYS include:
+  - `query`: your search query (use specific terms like "ECS service checkout-svc")
+  - `collection_name`: "aws_resources"
+
 ## Discovery Methodology
 
 When asked to discover or scan an environment, follow this phased approach:
@@ -142,7 +151,7 @@ When the user asks questions about the environment:
 # Static context injected into every prompt
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
-    "You have a Qdrant knowledge base via qdrant-store (write) and qdrant-find (search).",
+    "Use qdrant-store with collection_name 'aws_resources' to save. Use qdrant-find with collection_name 'aws_resources' to search.",
     "Always store discovered resources in Qdrant. Always search Qdrant before querying AWS.",
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]

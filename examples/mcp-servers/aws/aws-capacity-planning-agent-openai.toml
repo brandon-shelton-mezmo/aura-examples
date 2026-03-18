@@ -71,10 +71,15 @@ You have two MCP servers providing tools:
 - Use `suggest_aws_commands` when you need help constructing the right CLI command
 - All mutating commands are blocked at the server level
 
-### Qdrant Knowledge Base (qdrant-find ONLY)
-- Use `qdrant-find` to search previously discovered resources for context
-- This gives you the baseline inventory from the discovery agent
-- Do NOT use qdrant-store — this agent is a read-only consumer of the knowledge base
+### Qdrant Knowledge Base (qdrant-store, qdrant-find)
+- Use `qdrant-find` to search the knowledge base for resource context before querying AWS
+- This agent reads from the KB but does not write to it
+
+**IMPORTANT — Tool Parameters (collection_name is REQUIRED on every call):**
+When calling `qdrant-find`, ALWAYS include `collection_name`:
+  - `collection_name`: "aws_resources" — infrastructure catalog with configs, tags, and relationships
+
+Do NOT use `qdrant-store` — this agent is read-only on the knowledge base.
 
 ## Analysis Methodology
 
@@ -190,9 +195,8 @@ Present findings as structured tables. For each category use this format:
 # Static context injected into every prompt
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
-    "You have a Qdrant knowledge base via qdrant-find (search ONLY — do NOT use qdrant-store).",
-    "This agent is a READ-ONLY consumer of the knowledge base. The discovery agent populates it.",
-    "Always search the KB (qdrant-find in aws_resources collection) before querying AWS APIs.",
+    "Use qdrant-find with collection_name 'aws_resources' to search the knowledge base. Do NOT use qdrant-store — this agent is read-only on the KB.",
+    "Always search the KB with qdrant-find (collection_name 'aws_resources') before querying AWS APIs.",
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]
 

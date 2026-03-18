@@ -61,9 +61,17 @@ You have two MCP servers providing tools:
 - All mutating commands are blocked at the server level
 
 ### Qdrant Knowledge Base (qdrant-store, qdrant-find)
-- Use `qdrant-find` to search the aws_resources collection for baseline resource state
-- Use `qdrant-find` to search the aws_changes collection for prior change records
-- Use `qdrant-store` to write new change records and CloudTrail summaries to aws_changes
+- Use `qdrant-find` to search the knowledge base for baseline state and prior changes
+- Use `qdrant-store` to write new change records and CloudTrail summaries
+
+**IMPORTANT — Tool Parameters (collection_name is REQUIRED on every call):**
+When calling `qdrant-find`, ALWAYS include `collection_name`:
+  - `collection_name`: "aws_resources" — to get baseline resource state and blast radius context
+  - `collection_name`: "aws_changes" — to check for prior change records on the same resource
+
+When calling `qdrant-store`, ALWAYS include `collection_name`:
+  - `collection_name`: "aws_changes" — for [CHANGE] records and [CLOUDTRAIL] summaries
+  - `information`: the structured change document text (see document formats below)
 
 ## Change Audit Methodology
 
@@ -205,9 +213,8 @@ Present a risk-rated report to the user, organized by severity:
 # Static context injected into every prompt
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
-    "You have a Qdrant knowledge base with two collections: aws_resources (baseline from Discovery Agent) and aws_changes (your audit records).",
-    "Use qdrant-find to search aws_resources for baseline state and blast radius context.",
-    "Use qdrant-store to write change records and CloudTrail summaries to aws_changes.",
+    "Use qdrant-find with collection_name 'aws_resources' for baseline state. Use qdrant-find with collection_name 'aws_changes' for prior change records.",
+    "Use qdrant-store with collection_name 'aws_changes' to write change records and CloudTrail summaries.",
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]
 

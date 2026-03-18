@@ -73,9 +73,17 @@ Run these checks in order and report results:
 
 ### 3. Qdrant Connectivity Validation
 - Attempt a qdrant-store with a test document: "[PREFLIGHT_TEST] connection check"
+  - Use `collection_name`: "aws_resources" (this is the primary collection for all agents)
+  - Use `information`: "[PREFLIGHT_TEST] connection check"
 - Attempt a qdrant-find for "PREFLIGHT_TEST"
+  - Use `collection_name`: "aws_resources"
+  - Use `query`: "PREFLIGHT_TEST"
 - Confirm: Both write and read are working
 - Report: Qdrant URL, collection name, embedding model
+
+**IMPORTANT — Tool Parameters (collection_name is REQUIRED on every call):**
+When calling `qdrant-store`, ALWAYS include `collection_name` and `information`.
+When calling `qdrant-find`, ALWAYS include `collection_name` and `query`.
 
 ### 4. Environment Discovery (Quick Probe)
 Run lightweight list commands to detect which services have resources:

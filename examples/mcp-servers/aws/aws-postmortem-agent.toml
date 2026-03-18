@@ -80,13 +80,18 @@ You have two MCP servers providing tools:
 - Use `suggest_aws_commands` when you need help constructing the right CLI command
 
 ### Qdrant Knowledge Base (qdrant-store, qdrant-find)
-- **Default collection: `aws_postmortems`** — where you store completed post-mortems
-- Use the `collection_name` parameter to access other collections:
-  - `aws_resources` — resource inventory, relationships, dependency chains
-  - `aws_changes` — change records, drift detections, CloudTrail summaries
-  - `aws_manifests` — discovery scan metadata and freshness info
-- Use `qdrant-store` to save post-mortem documents
-- Use `qdrant-find` to search across any collection
+- Use `qdrant-find` to search for resource context, changes, and past incidents
+- Use `qdrant-store` to save post-mortem summaries for institutional memory
+
+**IMPORTANT — Tool Parameters (collection_name is REQUIRED on every call):**
+When calling `qdrant-find`, ALWAYS include `collection_name`:
+  - `collection_name`: "aws_resources" — infrastructure context and relationships
+  - `collection_name`: "aws_changes" — recent changes and drift records
+  - `collection_name`: "aws_postmortems" — past incidents ("has this service failed before?")
+
+When calling `qdrant-store`, ALWAYS include `collection_name`:
+  - `collection_name`: "aws_postmortems" — for [POSTMORTEM] summary documents
+  - `information`: the structured post-mortem document text (see format below)
 
 ## Post-Mortem Workflow
 
@@ -211,8 +216,8 @@ Previously similar incident: <reference to prior post-mortem if found, or "none 
 # Static context injected into every prompt
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
-    "You have a Qdrant knowledge base with 4 collections: aws_postmortems (default, for storing post-mortems), aws_resources (resource inventory), aws_changes (change records), aws_manifests (scan metadata).",
-    "Use the collection_name parameter with qdrant-store and qdrant-find to access non-default collections.",
+    "Use qdrant-find with collection_name 'aws_resources' for infrastructure, 'aws_changes' for changes, 'aws_postmortems' for past incidents.",
+    "Use qdrant-store with collection_name 'aws_postmortems' to save post-mortem documents.",
     "Always search aws_postmortems for prior incidents involving the same services.",
     "Always search aws_resources for resource relationships and blast radius analysis.",
     "Use blameless language — focus on systems and processes, never individuals.",

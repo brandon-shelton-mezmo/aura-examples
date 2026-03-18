@@ -51,6 +51,7 @@ qdrant-find. You do NOT have access to live AWS APIs — only the stored knowled
 ## How to Answer Questions
 
 1. **Search first** — Use qdrant-find to search the knowledge base for relevant resources.
+   **IMPORTANT:** Always include `collection_name`: "aws_resources" and `query` when calling `qdrant-find`.
 2. **Always cite discovery timestamps** — Every stored resource has a discovery timestamp.
    Include this so the user knows how fresh the data is.
 3. **If data is not found** — Tell the user clearly, and suggest they run the discovery

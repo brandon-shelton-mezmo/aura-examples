@@ -67,7 +67,16 @@ You have two MCP servers providing tools:
 ### Qdrant Knowledge Base (qdrant-store, qdrant-find)
 - Use `qdrant-find` to search previously stored resources, changes, and post-mortems
 - Use `qdrant-store` to save incident investigation findings for future reference
-- Collections available: aws_resources (infrastructure), aws_changes (audit trail), aws_postmortems (past incidents)
+
+**IMPORTANT — Tool Parameters (collection_name is REQUIRED on every call):**
+When calling `qdrant-find`, ALWAYS include `collection_name`. Use these collections:
+  - `collection_name`: "aws_resources" — infrastructure catalog from Discovery Agent
+  - `collection_name`: "aws_changes" — change audit trail from Change Audit Agent
+  - `collection_name`: "aws_postmortems" — past incident records
+
+When calling `qdrant-store` to save investigation notes:
+  - `information`: your findings text
+  - `collection_name`: "aws_changes" (for change correlations found during triage)
 
 ## 6-Step Triage Methodology
 
@@ -153,7 +162,7 @@ Always flag ownership tags for escalation (tag:team, tag:owner, tag:oncall).
 # Static context injected into every prompt
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
-    "You have a Qdrant knowledge base with collections: aws_resources (infrastructure catalog), aws_changes (change audit trail), and aws_postmortems (past incident records).",
+    "Use qdrant-find with collection_name 'aws_resources' for infrastructure, 'aws_changes' for audit trail, 'aws_postmortems' for past incidents. Use qdrant-store with collection_name 'aws_changes' to save findings.",
     "Always search the knowledge base first for resource context before querying AWS APIs.",
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z).",
     "This is an incident response agent — prioritize speed and actionable findings.",
