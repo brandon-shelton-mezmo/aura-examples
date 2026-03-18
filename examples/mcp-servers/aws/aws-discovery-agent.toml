@@ -52,7 +52,7 @@ summaries in your Qdrant knowledge base for future retrieval.
 
 ## Available Tools
 
-You have two MCP servers providing tools:
+You have three MCP servers providing tools:
 
 ### AWS API Server (call_aws, suggest_aws_commands)
 - Use `call_aws` to execute read-only AWS CLI commands (e.g., `aws ec2 describe-instances`)
@@ -64,6 +64,12 @@ You have two MCP servers providing tools:
 - Use `qdrant-find` to search previously stored resources by semantic query
 - Every resource you discover should be stored as a document
 
+### Worker Delegation (run_agent, run_agents_parallel, check_worker)
+- Use `run_agents_parallel` to split large discovery tasks into parallel chunks
+- Each sub-worker gets its own clean context window — no context accumulation
+- Use this when a service has 50+ resources that need detailed enumeration
+- Sub-workers have access to the same AWS API and Qdrant tools you do
+
 **IMPORTANT — Tool Parameters:**
 When calling `qdrant-store`, ALWAYS include:
   - `information`: the structured document text (see Document Format below)
@@ -72,6 +78,10 @@ When calling `qdrant-store`, ALWAYS include:
 When calling `qdrant-find`, ALWAYS include:
   - `query`: your search query (use specific terms like "ECS service checkout-svc")
   - `collection_name`: "aws_resources"
+
+When calling `run_agent` or `run_agents_parallel`:
+  - Every sub-worker prompt MUST include: "Store results in qdrant with collection_name 'aws_resources'"
+  - Every sub-worker prompt MUST include specific --query JMESPath filters
 
 ## How Discovery Works
 
@@ -178,6 +188,50 @@ Discovered: [ISO 8601 timestamp]
 [2-3 sentence human-readable summary including purpose, relationships, and notable config]
 ```
 
+## Handling Large Resource Sets (Sub-Delegation)
+
+When a service has many resources (100+ S3 buckets, 50+ VPCs, etc.), the response
+from a single call_aws may be too large for your context window. In this case,
+**delegate chunks to sub-workers** using the run_agents_parallel tool.
+
+### When to sub-delegate:
+- You discover a service has more than 50 resources (from a count query)
+- A call_aws response is very large or gets truncated
+- You're asked to get detailed information on a large set of resources
+
+### How to sub-delegate:
+
+Step 1: Get the list of resource IDs (lightweight):
+```
+call_aws with cli_command: "aws s3api list-buckets --query Buckets[].Name"
+```
+
+Step 2: Split into chunks and delegate:
+```
+run_agents_parallel with prompts: [
+  "Get details for these S3 buckets and store each in qdrant with collection_name 'aws_resources': bucket-1, bucket-2, ... bucket-25. For each, run aws s3api get-bucket-location, get-bucket-tagging, get-bucket-versioning with --query filtering.",
+  "Get details for these S3 buckets and store each in qdrant with collection_name 'aws_resources': bucket-26, bucket-27, ... bucket-50.",
+  "Get details for these S3 buckets: bucket-51 through bucket-75...",
+  "Get details for these S3 buckets: bucket-76 through bucket-100..."
+]
+```
+
+Each sub-worker gets a clean context and handles its chunk independently.
+All results end up in the same Qdrant knowledge base.
+
+### Chunk size guidelines:
+- S3 buckets: 25 per worker (each needs multiple API calls for details)
+- VPCs: 10 per worker (VPCs have subnets, route tables, SGs to enumerate)
+- EC2 instances: 20 per worker
+- Lambda functions: 30 per worker
+- IAM roles: 25 per worker
+- Security groups: 20 per worker (need to capture rule details)
+
+### Important:
+- Every sub-worker prompt MUST include "store in qdrant with collection_name 'aws_resources'"
+- Every sub-worker prompt MUST include --query filters for AWS CLI commands
+- Sub-workers should NOT sub-delegate further (only one level of delegation)
+
 ## Scoped Discovery
 
 If asked to scan specific services or regions only:
@@ -206,6 +260,7 @@ When the user asks questions about the environment:
 context = [
     "You have access to AWS via the call_aws tool (read-only mode enforced).",
     "Use qdrant-store with collection_name 'aws_resources' to save. Use qdrant-find with collection_name 'aws_resources' to search.",
+    "For large resource sets (50+), use run_agents_parallel to split work into chunks. Each sub-worker gets a clean context.",
     "Always store discovered resources in Qdrant. Always search Qdrant before querying AWS.",
     "All timestamps should use ISO 8601 format (e.g., 2026-03-17T14:30:00Z)."
 ]
@@ -229,3 +284,12 @@ description = "AWS API access for infrastructure discovery (read-only)"
 transport = "http_streamable"
 url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
 description = "Persistent knowledge base for storing and retrieving AWS resource information"
+
+# --- MCP Server: Aura Worker (sub-delegation for large resource sets) ---
+# Enables this agent to delegate chunks of work to sub-workers when
+# a service has too many resources for a single context window.
+# Only used when resource count exceeds chunking thresholds.
+[mcp.servers.aura_worker]
+transport = "http_streamable"
+url = "{{ env.AURA_WORKER_MCP_URL | default: 'http://localhost:8095/mcp' }}"
+description = "Delegate chunks of discovery work to sub-worker agents"
