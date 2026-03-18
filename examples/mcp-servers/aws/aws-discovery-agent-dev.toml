@@ -158,14 +158,19 @@ context = [
 ]
 
 # --- MCP Server: AWS API (read-only infrastructure discovery) ---
-# Official AWS Labs MCP server running in HTTP mode.
-# Start separately: see docker-compose.yml or run manually:
-#   AWS_REGION=us-east-1 READ_OPERATIONS_ONLY=true AWS_API_MCP_TRANSPORT=streamable-http \
-#     AUTH_TYPE=no-auth awslabs.aws-api-mcp-server
+# Official AWS Labs MCP server. Uses stdio transport for direct process communication.
+# Requires: pip install awslabs.aws-api-mcp-server (or uv tool install)
 [mcp.servers.aws_api]
-transport = "http_streamable"
-url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8090/mcp' }}"
+transport = "stdio"
+cmd = ["awslabs.aws-api-mcp-server"]
+args = []
 description = "AWS API access for infrastructure discovery (read-only)"
+
+[mcp.servers.aws_api.env]
+AWS_REGION = "{{ env.AWS_REGION | default: 'us-east-1' }}"
+AWS_ACCESS_KEY_ID = "{{ env.AWS_ACCESS_KEY_ID }}"
+AWS_SECRET_ACCESS_KEY = "{{ env.AWS_SECRET_ACCESS_KEY }}"
+READ_OPERATIONS_ONLY = "true"
 
 # --- MCP Server: Qdrant (persistent knowledge base) ---
 # Official Qdrant MCP server running in HTTP mode.
