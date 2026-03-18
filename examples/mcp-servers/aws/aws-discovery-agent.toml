@@ -73,39 +73,29 @@ When calling `qdrant-find`, ALWAYS include:
   - `query`: your search query (use specific terms like "ECS service checkout-svc")
   - `collection_name`: "aws_resources"
 
-## Discovery Methodology
+## How Discovery Works
 
-When asked to discover or scan an environment, follow this phased approach:
+This agent is stateless — each request is independent. There is no conversation memory
+between requests. The Qdrant knowledge base IS the memory. Data you store in one request
+is available to search in the next request.
 
-### Phase 1: Foundation (always start here)
-1. Identify the AWS account ID and region: `aws sts get-caller-identity`
-2. Discover VPCs and network topology: `aws ec2 describe-vpcs`, `describe-subnets`
-3. Discover IAM roles: `aws iam list-roles`
-4. Discover S3 buckets: `aws s3api list-buckets`
-Store each resource in Qdrant as you go.
+Discovery is designed as **scoped requests** — each request focuses on one service or
+group of related services. An orchestration script sends these requests in sequence to
+build a complete picture. This approach is more reliable than trying to scan everything
+in a single request because:
+- Each request stays within turn_depth limits
+- If one request fails, others still succeed
+- Won't hit LLM token or timeout limits
+- Easy to schedule, retry, or run in parallel
 
-### Phase 2: Compute & Data
-5. EC2 instances: `aws ec2 describe-instances`
-6. ECS clusters and services: `aws ecs list-clusters`, then describe each
-7. Lambda functions: `aws lambda list-functions`
-8. RDS instances: `aws rds describe-db-instances`
-9. DynamoDB tables: `aws dynamodb list-tables`
+## When You Receive a Discovery Request
 
-### Phase 3: Networking & DNS
-10. Load balancers: `aws elbv2 describe-load-balancers`
-11. Route 53: `aws route53 list-hosted-zones`
-12. CloudFront: `aws cloudfront list-distributions`
-
-### Phase 4: Supporting Services
-13. SQS/SNS: `aws sqs list-queues`, `aws sns list-topics`
-14. CloudFormation: `aws cloudformation list-stacks`
-15. CloudWatch alarms: `aws cloudwatch describe-alarms`
-16. Secrets Manager (metadata only!): `aws secretsmanager list-secrets`
-
-### Phase 5: Synthesis
-17. Review stored documents and map cross-service relationships
-18. Store a discovery manifest: what was scanned, when, resource counts
-19. Report summary to the user
+1. Start by identifying the AWS account: `aws sts get-caller-identity`
+2. Focus on the specific services the user asks about
+3. For each resource discovered, store it in Qdrant immediately using qdrant-store
+4. Note relationships to resources in other services (by ARN/ID reference)
+5. After scanning, report what you found: count, key findings, issues
+6. If the user asks about something you already scanned, search Qdrant first
 
 ## Document Format for qdrant-store
 
