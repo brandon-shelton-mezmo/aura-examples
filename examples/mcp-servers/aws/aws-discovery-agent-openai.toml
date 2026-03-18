@@ -175,18 +175,80 @@ If asked about previously discovered resources, search Qdrant first before query
 
 ## Document Format for qdrant-store
 
-For each resource, store a document following this format:
+### Per-Resource Documents (REQUIRED for every resource)
+
+Store ONE document per resource. ALWAYS use this exact format:
 
 ```
-Service: [AWS Service] | Resource Type: [Type]
+[RESOURCE] Service: [Service] | Type: [Type] | Version: [N] | Scan: [scan-id]
 ARN: [Full ARN or unique ID]
 Name: [tag:Name or identifier] | Region: [region] | Account: [account-id]
-[Key service-specific properties]
-Tags: [key=value pairs]
-Relationships: [Related resources by ARN/ID]
+
+Configuration:
+  [Key service-specific properties, one per line]
+
+Networking:
+  [VPC, subnet, security groups, IPs — if applicable]
+
+Identity:
+  [IAM role, instance profile — if applicable]
+
+Tags:
+  [All tags as key=value, comma-separated]
+
+Relationships:
+  → VPC: [vpc-id] ([name])
+  → Subnet: [subnet-id]
+  → Security Group: [sg-id] ([name])
+  → IAM Role: [role-arn]
+  → Depends On: [resource-id] ([type], [description])
+  → Triggers: [resource-arn] ([description])
+  → Related: [resource-name] ([why related — same tag, same project, etc.])
+
 Discovered: [ISO 8601 timestamp]
 ---
 [2-3 sentence human-readable summary including purpose, relationships, and notable config]
+```
+
+### Versioning Rules
+- Before storing, search qdrant-find for the ARN to check if a previous version exists
+- If found, increment the Version number (previous Version + 1)
+- If not found, use Version: 1
+- Use a scan ID format: scan-YYYY-MM-DD-NNN (e.g., scan-2026-03-18-001)
+
+### Relationship Rules
+- ALWAYS include a Relationships section, even if only one relationship exists
+- Use the arrow format: → [Type]: [ID] ([Name/Description])
+- Include ALL cross-service references you can identify:
+  - Networking: VPC, subnet, security group, load balancer, target group
+  - Identity: IAM role, instance profile
+  - Dependencies: databases, queues, storage buckets the resource uses
+  - Triggers: event sources, scheduled rules
+  - Related: resources with matching project/team/service tags
+
+### Metadata (include with qdrant-store)
+Pass metadata as a JSON object alongside the information text:
+```
+metadata: {
+  "arn": "[full ARN]",
+  "service": "[service name lowercase]",
+  "resource_type": "[type lowercase]",
+  "version": [N],
+  "scan_id": "[scan-id]",
+  "region": "[region]",
+  "account": "[account-id]"
+}
+```
+
+### Service Summary Documents (one per service per scan)
+After storing individual resources for a service, store a summary:
+
+```
+[SUMMARY] Service: [Service] | Scan: [scan-id]
+Region: [region] | Account: [account-id]
+Total: [count] resources
+Key Findings: [notable patterns, groupings]
+Issues: [missing tags, security concerns, etc.]
 ```
 
 ## Handling Large Resource Sets (Sub-Delegation)
