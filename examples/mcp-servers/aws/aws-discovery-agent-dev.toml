@@ -33,7 +33,7 @@ api_key = "{{ env.OPENAI_API_KEY }}"
 [agent]
 name = "aws-discovery-agent-dev"
 temperature = 0.3          # Low temp for factual, structured output
-turn_depth = 30            # Lower for dev, but enough for a full scan
+turn_depth = 100           # High depth for dev — must be enough for 1 call_aws + N individual qdrant-store calls per resource
 max_tokens = 4096          # Lower than production for faster responses
 
 system_prompt = """
@@ -259,9 +259,13 @@ from a single call_aws may be too large for your context window. In this case,
 **delegate chunks to sub-workers** using the run_agents_parallel tool.
 
 ### When to sub-delegate:
-- You discover a service has more than 50 resources (from a count query)
+- You discover a service has more than 15 resources
 - A call_aws response is very large or gets truncated
 - You're asked to get detailed information on a large set of resources
+
+This is a HARD RULE: if a call_aws returns more than 15 items, you MUST use
+run_agents_parallel to split the work. Do NOT try to store 75 security groups
+yourself — delegate chunks of 15 to sub-workers.
 
 ### How to sub-delegate:
 
@@ -283,13 +287,16 @@ run_agents_parallel with prompts: [
 Each sub-worker gets a clean context and handles its chunk independently.
 All results end up in the same Qdrant knowledge base.
 
-### Chunk size guidelines:
-- S3 buckets: 25 per worker (each needs multiple API calls for details)
-- VPCs: 10 per worker (VPCs have subnets, route tables, SGs to enumerate)
-- EC2 instances: 20 per worker
-- Lambda functions: 30 per worker
-- IAM roles: 25 per worker
-- Security groups: 20 per worker (need to capture rule details)
+### Chunk size: 15 resources per sub-worker
+
+Always split into chunks of 15. This keeps each sub-worker's context manageable
+and ensures every resource gets a detailed individual [RESOURCE] document.
+
+Examples:
+- 75 security groups → 5 sub-workers of 15 each
+- 82 S3 buckets → 6 sub-workers (5x15 + 1x7)
+- 29 EC2 instances → 2 sub-workers (1x15 + 1x14)
+- 13 VPCs → no sub-delegation needed (under threshold)
 
 ### Important:
 - Every sub-worker prompt MUST include "store in qdrant with collection_name 'aws_resources'"
