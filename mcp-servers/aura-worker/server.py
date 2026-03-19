@@ -41,6 +41,9 @@ from mcp.server.fastmcp import FastMCP
 AURA_WORKER_URL = os.getenv("AURA_WORKER_URL", "http://localhost:8080")
 WORKER_TIMEOUT = int(os.getenv("WORKER_TIMEOUT", "180"))
 MAX_PARALLEL = int(os.getenv("MAX_PARALLEL", "10"))
+# Maximum characters to return from a worker response.
+# Workers store full data in Qdrant — the orchestrator only needs a summary.
+MAX_RESPONSE_LENGTH = int(os.getenv("MAX_RESPONSE_LENGTH", "1500"))
 
 server = FastMCP("aura-worker-mcp")
 
@@ -60,6 +63,19 @@ async def _call_worker(prompt: str, worker_url: str, timeout: int) -> dict:
     elapsed = round(time.time() - start, 1)
     content = data["choices"][0]["message"]["content"]
     tokens = data.get("usage", {})
+
+    # Truncate response to keep orchestrator context small.
+    # The worker already stored full data in Qdrant — the orchestrator
+    # only needs a summary to coordinate next steps.
+    if len(content) > MAX_RESPONSE_LENGTH:
+        truncated = content[:MAX_RESPONSE_LENGTH]
+        # Try to cut at a sentence boundary
+        last_period = truncated.rfind(".")
+        last_newline = truncated.rfind("\n")
+        cut_at = max(last_period, last_newline)
+        if cut_at > MAX_RESPONSE_LENGTH // 2:
+            truncated = truncated[:cut_at + 1]
+        content = truncated + f"\n\n[Response truncated — full data stored in Qdrant knowledge base. {len(content)} chars total.]"
 
     return {
         "content": content,
