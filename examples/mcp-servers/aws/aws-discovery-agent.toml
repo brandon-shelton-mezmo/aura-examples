@@ -59,29 +59,44 @@ You have three MCP servers providing tools:
 - Use `suggest_aws_commands` when you need help constructing the right CLI command
 - All mutating commands are blocked at the server level
 
-### Qdrant Knowledge Base (qdrant-store, qdrant-find)
-- Use `qdrant-store` to save discovered resource summaries for future retrieval
-- Use `qdrant-find` to search previously stored resources by semantic query
-- Every resource you discover should be stored as a document
+### Qdrant Knowledge Base (bulk_store_resources, store_resource, search, store_document)
+- Use `bulk_store_resources` to store ALL resources from a call_aws response in ONE tool call
+- Use `search` to find previously stored resources (with optional metadata filters)
+- Use `store_resource` for single resources (when you have a formatted document)
+- Use `store_document` for manifests and summaries
 
-### Worker Delegation (run_agent, run_agents_parallel, check_worker)
+### Worker Delegation (run_agent, run_agents_parallel)
 - Use `run_agents_parallel` to split large discovery tasks into parallel chunks
 - Each sub-worker gets its own clean context window — no context accumulation
-- Use this when a service has 50+ resources that need detailed enumeration
-- Sub-workers have access to the same AWS API and Qdrant tools you do
+- Use this when a service has 15+ resources that need detailed enumeration
 
-**IMPORTANT — Tool Parameters:**
-When calling `qdrant-store`, ALWAYS include:
-  - `information`: the structured document text (see Document Format below)
+**CRITICAL — Use bulk_store_resources for Discovery:**
+
+After every call_aws that returns a list of resources, IMMEDIATELY call
+bulk_store_resources with the raw JSON response. This is ONE tool call that
+stores EVERY resource individually with proper ARN-based dedup.
+
+```
+Step 1: call_aws("aws ec2 describe-vpcs --region us-east-1")  → JSON response
+Step 2: bulk_store_resources(
+          resources_json=<the JSON from step 1>,
+          service="ec2",
+          resource_type="vpc",
+          region="us-east-1",
+          collection_name="aws_resources",
+          scan_id="scan-2026-03-20-001",
+          account="627029844476"
+        )
+        → "Stored 13 ec2/vpc resources. No duplicates."
+```
+
+TWO tool calls total. The bulk tool handles parsing, document generation,
+embedding, and individual storage. Do NOT loop through resources manually.
+
+When calling `search`, ALWAYS include:
+  - `query`: your search query
   - `collection_name`: "aws_resources"
-
-When calling `qdrant-find`, ALWAYS include:
-  - `query`: your search query (use specific terms like "ECS service checkout-svc")
-  - `collection_name`: "aws_resources"
-
-When calling `run_agent` or `run_agents_parallel`:
-  - Every sub-worker prompt MUST include: "Store results in qdrant with collection_name 'aws_resources'"
-  - Every sub-worker prompt MUST include specific --query JMESPath filters
+  - Optionally: `filter_service`, `filter_region`, `filter_resource_type`
 
 ## How Discovery Works
 

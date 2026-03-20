@@ -212,6 +212,227 @@ def store_document(
 
 
 @server.tool()
+def bulk_store_resources(
+    resources_json: str,
+    service: str,
+    resource_type: str,
+    region: str,
+    collection_name: str,
+    scan_id: str = "",
+    account: str = "",
+) -> str:
+    """Store multiple AWS resources at once from a JSON array. ONE tool call stores ALL resources.
+
+    Use this after call_aws returns a list of resources. Pass the entire JSON response —
+    this tool parses it and stores each resource as a separate document with a
+    deterministic ID. No duplicates, no looping, no context accumulation.
+
+    The tool generates a [RESOURCE] document for each item, extracts an ARN or ID for
+    deduplication, and upserts into Qdrant.
+
+    Args:
+        resources_json: JSON string — either a JSON array of resource objects, or the
+                        raw call_aws response text containing resource data.
+                        Each object should have identifying fields (like Id, VpcId,
+                        InstanceId, FunctionName, Name, Arn, GroupId, etc.)
+        service: AWS service name (e.g., 'ec2', 's3', 'lambda', 'iam').
+        resource_type: Resource type (e.g., 'instance', 'vpc', 'bucket', 'role', 'security-group').
+        region: AWS region (e.g., 'us-east-1', 'global').
+        collection_name: Qdrant collection (typically 'aws_resources').
+        scan_id: Scan identifier (e.g., 'scan-2026-03-20-001').
+        account: AWS account ID.
+    """
+    ensure_collection(collection_name)
+
+    # Parse the JSON — handle multiple formats from call_aws
+    try:
+        resources = json.loads(resources_json)
+    except json.JSONDecodeError:
+        # call_aws sometimes returns text with embedded JSON
+        # Try to find a JSON array or object in the text
+        for start_char in ("[", "{"):
+            idx = resources_json.find(start_char)
+            if idx >= 0:
+                try:
+                    resources = json.loads(resources_json[idx:])
+                    break
+                except json.JSONDecodeError:
+                    continue
+        else:
+            return f"Error: Could not parse resources_json as JSON. Pass the raw JSON from call_aws."
+
+    # Unwrap response wrappers — call_aws often wraps in {"Result": [...]}
+    if isinstance(resources, dict):
+        # Check for call_aws Result wrapper
+        if "Result" in resources and isinstance(resources["Result"], list):
+            resources = resources["Result"]
+        elif "Result" in resources and isinstance(resources["Result"], dict):
+            resources = resources["Result"]
+            # Fall through to unwrap the inner dict
+
+        if isinstance(resources, dict):
+            # Try common AWS response keys
+            for key in ["Vpcs", "Reservations", "Instances", "Functions", "Buckets",
+                        "Roles", "SecurityGroups", "LoadBalancers", "Tables",
+                        "StackSummaries", "QueueUrls", "Topics", "HostedZones",
+                        "DistributionList", "MetricAlarms", "SecretList",
+                        "DBInstances", "clusterArns", "serviceArns",
+                        "Subnets", "RouteTables", "NatGateways", "InternetGateways"]:
+                if key in resources:
+                    resources = resources[key]
+                    break
+
+    # Handle EC2 instances nested in Reservations
+    if isinstance(resources, list) and resources and isinstance(resources[0], dict):
+        if "Instances" in resources[0]:
+            instances = []
+            for reservation in resources:
+                instances.extend(reservation.get("Instances", []))
+            resources = instances
+
+    if not isinstance(resources, list):
+        resources = [resources]
+
+    if not resources:
+        return f"No resources found in the provided data."
+
+    # Store each resource
+    stored = 0
+    errors = 0
+    points_batch = []
+
+    for item in resources:
+        if not isinstance(item, dict):
+            errors += 1
+            continue
+
+        # Extract ARN or generate one from available identifiers
+        arn = (
+            item.get("Arn") or
+            item.get("ARN") or
+            item.get("LoadBalancerArn") or
+            item.get("FunctionArn") or
+            item.get("RoleArn") or
+            item.get("TopicArn") or
+            item.get("QueueUrl") or
+            None
+        )
+
+        # Build ARN from ID fields if no direct ARN
+        if not arn:
+            resource_id = (
+                item.get("Id") or
+                item.get("VpcId") or
+                item.get("InstanceId") or
+                item.get("GroupId") or
+                item.get("SubnetId") or
+                item.get("Name") or
+                item.get("FunctionName") or
+                item.get("RoleName") or
+                item.get("DBInstanceIdentifier") or
+                item.get("TableName") or
+                item.get("StackName") or
+                str(item)[:50]
+            )
+            arn = f"arn:aws:{service}:{region}:{account}:{resource_type}/{resource_id}"
+
+        # Get human-readable name
+        name = (
+            item.get("Name") or
+            item.get("FunctionName") or
+            item.get("RoleName") or
+            item.get("GroupName") or
+            item.get("DBInstanceIdentifier") or
+            item.get("LoadBalancerName") or
+            item.get("StackName") or
+            item.get("Id") or
+            item.get("VpcId") or
+            item.get("InstanceId") or
+            item.get("GroupId") or
+            "unnamed"
+        )
+
+        # Build document text
+        props = "\n".join(f"  {k}: {v}" for k, v in item.items()
+                         if k not in ("Tags",) and v is not None)
+
+        # Extract tags if present
+        tags_list = item.get("Tags") or []
+        tags_str = ", ".join(f"{t.get('Key', t.get('K', '?'))}={t.get('Value', t.get('V', '?'))}"
+                            for t in tags_list) if isinstance(tags_list, list) else ""
+
+        # Extract relationships from known fields
+        relationships = []
+        if item.get("VpcId"):
+            relationships.append(f"  → VPC: {item['VpcId']}")
+        if item.get("SubnetId"):
+            relationships.append(f"  → Subnet: {item['SubnetId']}")
+        if item.get("Role"):
+            relationships.append(f"  → IAM Role: {item['Role']}")
+        if item.get("SecurityGroups"):
+            sgs = item["SecurityGroups"]
+            if isinstance(sgs, list):
+                for sg in sgs:
+                    sg_id = sg if isinstance(sg, str) else sg.get("GroupId", sg.get("Id", str(sg)))
+                    relationships.append(f"  → Security Group: {sg_id}")
+
+        rel_str = "\n".join(relationships) if relationships else "  (none identified)"
+
+        doc = (
+            f"[RESOURCE] Service: {service} | Type: {resource_type} | Version: 1 | Scan: {scan_id}\n"
+            f"ARN: {arn}\n"
+            f"Name: {name} | Region: {region} | Account: {account}\n\n"
+            f"Configuration:\n{props}\n\n"
+            f"Tags: {tags_str or '(none)'}\n\n"
+            f"Relationships:\n{rel_str}\n\n"
+            f"Discovered: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+            f"---\n"
+            f"{service.upper()} {resource_type} '{name}' in {region}."
+        )
+
+        meta = {
+            "arn": arn,
+            "service": service,
+            "resource_type": resource_type,
+            "region": region,
+            "account": account,
+            "version": 1,
+            "scan_id": scan_id,
+            "pillar": "aws_environment",
+            "stored_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        point_id = arn_to_id(arn)
+        try:
+            vector = embed_text(doc)
+            points_batch.append(
+                models.PointStruct(
+                    id=point_id,
+                    vector=vector,
+                    payload={"document": doc, "metadata": meta},
+                )
+            )
+            stored += 1
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to embed resource {arn}: {e}")
+
+    # Batch upsert all points at once
+    if points_batch:
+        # Qdrant supports batch upsert — much faster than one at a time
+        BATCH_SIZE = 50
+        for i in range(0, len(points_batch), BATCH_SIZE):
+            batch = points_batch[i:i + BATCH_SIZE]
+            qdrant.upsert(collection_name=collection_name, points=batch)
+
+    return (
+        f"Stored {stored} {service}/{resource_type} resources in {collection_name}. "
+        f"Errors: {errors}. Scan: {scan_id}. "
+        f"Each resource has a deterministic ID from its ARN — no duplicates."
+    )
+
+
+@server.tool()
 def search(
     query: str,
     collection_name: str,
