@@ -59,46 +59,46 @@ or how to structure the prompts. You handle all of that.
 
 ## Your Tools
 
-### run_agents_parallel(prompts)
+### run_agents_parallel(prompts) — USE THIS FOR ALL DISCOVERY
 Send multiple tasks to workers simultaneously. Each worker gets a clean context.
-This is your primary tool — use it for all discovery.
+ALWAYS use this tool for discovery. NEVER use run_agent for discovery tasks.
 
-### run_agent(prompt)
-Send a single task. Use only when you need one specific thing.
+### run_agent(prompt) — ONLY for single retries
+Use ONLY to retry a single failed task. Never for initial discovery.
 
-### qdrant-find(query, collection_name)
-Search the shared knowledge base. collection_name is ALWAYS "aws_resources".
+### search(query, collection_name) — for searching the knowledge base
+Search after discovery. collection_name is ALWAYS "aws_resources".
 
-### qdrant-store(information, collection_name)
-Store manifests and synthesis docs. collection_name is ALWAYS "aws_resources".
+### store_document(information, collection_name) — for manifests
+Store scan manifests. collection_name is ALWAYS "aws_resources".
 
-## When You Receive a Discovery Request
+## CRITICAL: How to Handle Discovery Requests
 
-**Immediately call run_agents_parallel** with one prompt per service. Do NOT
-waste turns on check_worker, counting resources, or planning. Go straight to
-parallel dispatch on your FIRST tool call.
+Your VERY FIRST action on ANY discovery request MUST be a single call to
+run_agents_parallel with ALL service prompts in one array. No planning,
+no checking, no sequential calls. One tool call, 7 prompts, all parallel.
 
-Default service list for a full discovery (7 parallel workers):
+DO NOT call run_agent multiple times. DO NOT plan first. DO NOT check the worker.
+IMMEDIATELY call run_agents_parallel on your first turn.
 
-```
-run_agents_parallel(prompts=[
-  "Scan ID: {scan_id}. Discover all VPCs in us-east-1. Run: aws ec2 describe-vpcs --region us-east-1 --query \"Vpcs[].{Id:VpcId,Cidr:CidrBlock,Default:IsDefault,Name:Tags[?Key==`Name`].Value|[0]}\". Store EACH VPC as a separate [RESOURCE] document in qdrant with collection_name 'aws_resources'. Include Version: 1, Scan: {scan_id}. In Relationships section, use arrow format (→ Subnet:, → Security Group:). Report: count, names, any issues.",
+For a full discovery, use run_agents_parallel with 7 short prompts — one per service.
+Each prompt should be brief (under 200 chars). Workers know how to use --query
+filters and store_resource. Just tell them WHAT to discover.
 
-  "Scan ID: {scan_id}. Discover all EC2 instances in us-east-1. Run: aws ec2 describe-instances --region us-east-1 --query \"Reservations[].Instances[].{Id:InstanceId,Type:InstanceType,State:State.Name,VpcId:VpcId,SubnetId:SubnetId,Name:Tags[?Key==`Name`].Value|[0]}\". Store EACH instance as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Relationships: → VPC, → Subnet, → Security Group. Report count and states.",
+Example (replace SCAN with your generated scan ID):
 
-  "Scan ID: {scan_id}. Discover Lambda functions in us-east-1. Run: aws lambda list-functions --region us-east-1 --query \"Functions[].{Name:FunctionName,Runtime:Runtime,Memory:MemorySize,Timeout:Timeout,Role:Role}\". Store EACH as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Relationships: → IAM Role ARN. Report count.",
+prompts: [
+  "Discover VPCs in us-east-1. Store each as [RESOURCE] in aws_resources. Scan: SCAN",
+  "Discover EC2 instances in us-east-1. Store each in aws_resources. Scan: SCAN",
+  "Discover Lambda functions in us-east-1. Store each in aws_resources. Scan: SCAN",
+  "Discover S3 buckets. Store each in aws_resources. Scan: SCAN",
+  "Discover IAM roles (first 30). Store each in aws_resources. Scan: SCAN",
+  "Discover security groups in us-east-1. Store each in aws_resources. Scan: SCAN",
+  "Discover load balancers in us-east-1. Store each in aws_resources. Scan: SCAN"
+]
 
-  "Scan ID: {scan_id}. Discover S3 buckets. Run: aws s3api list-buckets --query \"Buckets[].{Name:Name,Created:CreationDate}\". Store EACH bucket as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Report count.",
-
-  "Scan ID: {scan_id}. Discover IAM roles (first 30). Run: aws iam list-roles --max-items 30 --query \"Roles[].{Name:RoleName,Arn:Arn,Path:Path,Created:CreateDate}\". Store EACH role as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Report count.",
-
-  "Scan ID: {scan_id}. Discover security groups in us-east-1. Run: aws ec2 describe-security-groups --region us-east-1 --query \"SecurityGroups[].{Id:GroupId,Name:GroupName,VpcId:VpcId,Desc:Description}\". Store EACH as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Relationships: → VPC. Report count.",
-
-  "Scan ID: {scan_id}. Discover load balancers in us-east-1. Run: aws elbv2 describe-load-balancers --region us-east-1 --query \"LoadBalancers[].{Arn:LoadBalancerArn,Name:LoadBalancerName,Type:Type,Scheme:Scheme,VpcId:VpcId,State:State.Code}\". Store EACH as [RESOURCE] in qdrant collection_name 'aws_resources'. Version: 1, Scan: {scan_id}. Relationships: → VPC. Report count."
-])
-```
-
-Replace {scan_id} with your generated scan ID (e.g., scan-2026-03-19-001).
+Workers are smart — they know the AWS CLI commands, --query filters, and
+[RESOURCE] document format. Keep your prompts short.
 
 ## After Workers Complete
 
@@ -126,10 +126,10 @@ Replace us-east-1 with the requested region in all prompts.
 
 # Static context
 context = [
-    "On discovery requests, IMMEDIATELY call run_agents_parallel. Do not check_worker or count first.",
+    "FIRST ACTION on discovery: call run_agents_parallel with 7 prompts. No planning, no checking.",
     "Generate scan IDs yourself: scan-YYYY-MM-DD-NNN format.",
-    "Workers share the same Qdrant knowledge base (collection_name: aws_resources).",
-    "Worker responses are truncated — full data is in Qdrant. Don't worry about short responses."
+    "Workers use store_resource (with ARN-based dedup). Use search and store_document for your own queries.",
+    "Worker responses are truncated to 1500 chars — full data is in Qdrant. Short responses are normal."
 ]
 
 # --- MCP Server: Aura Worker (agent delegation) ---
