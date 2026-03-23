@@ -66,77 +66,102 @@ needed for this use case.
 a tool result has been "consumed" (stored in Qdrant or referenced in LLM output)
 and replace it with a summary in the conversation history for subsequent turns.
 
-### Path 2: Agent Orchestration (Most Powerful)
+### Path 2: Agent Orchestration (Most Powerful) -- IMPLEMENTED
 
-**What:** An orchestrator agent spawns worker agents, each with its own context
-window. Workers handle one service each. Orchestrator collects summaries.
+**Status:** Implemented and tested. See `docs/orchestrator-architecture.md`.
 
-**Example:**
-```
-Orchestrator receives: "Full environment discovery"
-  → Spawns: VPC-worker, EC2-worker, S3-worker, Lambda-worker (parallel)
-  → Each worker: call_aws → qdrant-store → return "Found X resources"
-  → Orchestrator: collects summaries → synthesizes → reports
-```
+**What:** An orchestrator agent dispatches workers via the aura-worker MCP server.
+Workers use `discover_and_store` (Path 3) for zero-context discovery.
 
-**For large environments (72 VPCs):**
+**How it works now:**
 ```
-Orchestrator: call_aws("describe-vpcs --query Vpcs[].VpcId")
-  → Gets 72 VPC IDs
-  → Spawns 7 workers (10 VPCs each) in parallel
-  → Each worker: describe-vpc-detail → store → return summary
-  → Orchestrator: "72 VPCs discovered and stored"
+Orchestrator receives: "Discover my AWS environment"
+  → Batch 1: run_agents_parallel(5 workers — VPCs, EC2, S3, Lambda, IAM)
+  → Batch 2: run_agents_parallel(5 workers — SGs, subnets, LBs, Route53, CFN)
+  → retry_incomplete → fill any gaps from rate limit errors
+  → Report: "363 resources, 10 service types, 0 duplicates"
 ```
 
-**Impact:** Unlimited scale. Full parallelism. Each worker has a clean context.
+**Implementation:** The aura-worker MCP (`mcp-servers/aura-worker/server.py`) wraps
+aura's `/v1/chat/completions` API. It handles concurrency throttling (MAX_CONCURRENT=2),
+staggered starts (DELAY_BETWEEN_WORKERS=5s), and retry on rate limits (MAX_RETRIES=3).
+No changes to aura source were needed — this is built entirely with MCP + config.
 
-**Effort:** High. Requires the multi-agent orchestration feature that's on aura's
-roadmap (`aura.worker_phase` SSE event). Not available today.
+### Path 3: Custom Discovery MCP Server (No Aura Changes) -- IMPLEMENTED
 
-**Aura roadmap reference:**
-- `docs/streaming-api-guide.md:68` — `aura.worker_phase` marked as "Future"
-- `docs/aura-customer-deployment-guide.md:851` — "Multi-Agent Mode" listed
-- `docs/aura-sre-developer-use-cases.md:683` — "Incident Commander + Service Investigators"
+**Status:** Implemented and tested. See `mcp-servers/aura-qdrant/README.md`.
 
-### Path 3: Custom Discovery MCP Server (No Aura Changes)
+**What:** A custom MCP server (`mcp-servers/aura-qdrant/server.py`) that calls AWS
+via boto3 and stores results in Qdrant directly. The LLM sees only a summary string.
 
-**What:** Build a custom MCP server that does discovery internally (using boto3
-and qdrant-client directly) and returns only summaries to the LLM.
-
-**Example tool:**
+**The actual tool (simplified):**
 ```python
 @server.tool()
-def discover_vpcs(region: str) -> str:
-    """Discover VPCs and store in knowledge base. Returns summary only."""
-    vpcs = boto3.client('ec2', region_name=region).describe_vpcs()
-    # Process, format, store in Qdrant directly
-    qdrant.upsert(collection="aws_resources", points=[...])
-    return f"Discovered {len(vpcs)} VPCs. Stored in knowledge base."
+def discover_and_store(service_type: str, collection_name: str, scan_id: str, region: str = "us-east-1") -> str:
+    config = AWS_DISCOVERY_CONFIG[service_type]        # e.g., ec2/vpc → describe_vpcs
+    client = boto3.client(config["client"], region_name=region)
+    items = getattr(client, config["method"])()        # calls AWS directly
+    for item in items:
+        doc, arn, meta = _build_resource_doc(item, ...)  # structured [RESOURCE] document
+        vector = embed_text(doc)                          # FastEmbed
+        qdrant.upsert(points=[PointStruct(id=md5(arn), vector=vector, payload=...)])
+    return f"Discovered and stored {len(items)} {service_type} resources"
 ```
 
 The LLM sees a 50-token summary instead of 50K of JSON. Context stays tiny.
-Full environment scan in one request.
 
-**Impact:** Solves the problem completely. No aura changes. Buildable today.
+**12 supported service types:** ec2/vpc, ec2/instance, ec2/security-group, ec2/subnet,
+s3/bucket, lambda/function, iam/role, elbv2/load-balancer, route53/hosted-zone,
+cloudformation/stack, rds/instance, dynamodb/table.
 
-**Effort:** Medium. Need to write a Python MCP server wrapping boto3 + qdrant-client.
-~500 lines of code. One tool per service group, plus a `full_discovery()` that
-calls them all.
+**Key features beyond the original proposal:**
+- Deterministic IDs from `md5(arn)` — re-running produces 0 duplicates
+- Metadata payload indexes for filtered search (service, region, type, scan_id)
+- Batch upsert in groups of 50 for performance
+- Auto-detect AWS account ID via STS
+- ~1100 lines of code (more than the estimated 500, due to robust JSON parsing
+  in `bulk_store_resources` and relationship extraction)
 
-**Trade-off:** This moves intelligence OUT of the LLM and into code. The LLM no
-longer reasons about raw AWS data — it just orchestrates pre-built discovery tools.
-Less flexible, but much more reliable and scalable.
+## Current Status
+
+**Path 2 (Agent Orchestration) and Path 3 (Custom Discovery MCP) are both implemented
+and working together.** This combination is the production architecture.
+
+### Path 3: IMPLEMENTED — `discover_and_store`
+
+The custom Qdrant MCP server (`mcp-servers/aura-qdrant/server.py`) implements the exact
+pattern described above. The `discover_and_store` tool calls AWS via boto3 and stores
+results in Qdrant in a single MCP tool call. The LLM sees only a summary string.
+
+12 service types are supported: ec2/vpc, ec2/instance, ec2/security-group, ec2/subnet,
+s3/bucket, lambda/function, iam/role, elbv2/load-balancer, route53/hosted-zone,
+cloudformation/stack, rds/instance, dynamodb/table.
+
+See: `mcp-servers/aura-qdrant/README.md`
+
+### Path 2: IMPLEMENTED — Orchestrator + Workers
+
+The orchestrator agent (`aws-orchestrator-agent.toml`) dispatches 2 batches of 5
+parallel workers via the worker MCP (`mcp-servers/aura-worker/server.py`). Each worker
+makes a single `discover_and_store` call. The worker MCP handles throttling
+(MAX_CONCURRENT=2, staggered starts) and retry on rate limits.
+
+Tested result: 363 resources, 10 service types, 0 duplicates, 0 errors.
+
+See: `docs/orchestrator-architecture.md`, `mcp-servers/aura-worker/README.md`
+
+### Path 1: NOT YET IMPLEMENTED — Context Compression in Aura
+
+Still on the aura roadmap. Would benefit ad-hoc queries that use `call_aws` directly
+(incident response, change audit agents). Not needed for discovery now that
+`discover_and_store` handles it.
 
 ## Recommendation
 
-**Short term:** Path 3 (custom MCP server). Buildable today, solves the problem,
-no aura changes needed. The LLM orchestrates, the MCP server does the heavy lifting.
+**For discovery:** Use the orchestrator + `discover_and_store` (Paths 2+3). This is the
+tested, working architecture.
 
-**Medium term:** Path 1 (context compression). Makes the generic `call_aws` approach
-scale. Benefits all agents, not just discovery.
-
-**Long term:** Path 2 (agent orchestration). The most powerful and flexible, but
-requires the most aura development. Enables true parallelism for massive environments.
-
-All three paths are complementary — you could ship Path 3 now, add Path 1 to make
-ad-hoc queries scale, and add Path 2 for the full multi-agent SRE platform vision.
+**For ad-hoc queries:** The non-discovery agents (incident response, change audit,
+capacity planning) still use `call_aws` directly and benefit from Path 1 (context
+compression) when it ships in aura. For now, keep their queries focused on specific
+resources rather than broad scans.

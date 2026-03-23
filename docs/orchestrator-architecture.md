@@ -15,169 +15,150 @@ sees compact summaries.
 ## Architecture
 
 ```
-User: "Run full environment discovery"
+User: "Discover my AWS environment"
   │
   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ORCHESTRATOR AGENT (port 3030)                                  │
-│  Config: aws-orchestrator-agent.toml                             │
-│  Tools: run_agent, run_agents_parallel, qdrant-find, qdrant-store│
-│  Role: Coordinate, don't discover directly                       │
-│                                                                  │
-│  Step 1: check_worker → "ready"                                  │
-│  Step 2: run_agent("count resources per service")                │
-│  Step 3: run_agents_parallel([                                   │
-│            "Discover VPCs",                                      │
-│            "Discover S3",                                        │
-│            "Discover EC2",                                       │
-│            "Discover Lambda",                                    │
-│            "Discover IAM"                                        │
-│          ])                                                      │
-│  Step 4: qdrant-find → synthesize → qdrant-store(manifest)       │
-│  Step 5: Report summary to user                                  │
-└──────┬──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  ORCHESTRATOR AGENT (port 3030)                                   │
+│  Config: aws-orchestrator-agent.toml                              │
+│  Tools: run_agents_parallel, search (via aura-qdrant MCP)         │
+│  Role: Coordinate, don't discover directly                        │
+│                                                                   │
+│  Step 1: run_agents_parallel (batch 1 — 5 workers):               │
+│           VPCs, EC2, S3, Lambda, IAM                              │
+│  Step 2: run_agents_parallel (batch 2 — 5 workers):               │
+│           Security groups, subnets, LBs, Route53, CloudFormation  │
+│  Step 3: retry_incomplete → fill any gaps                         │
+│  Step 4: Report summary to user                                   │
+└──────┬────────────────────────────────────────────────────────────┘
        │ run_agents_parallel
-       │ (via aura-worker MCP)
+       │ (via aura-worker MCP, port 8095)
        ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  DISCOVERY WORKERS (port 8080, called N times in parallel)       │
-│  Config: aws-discovery-agent.toml                                │
-│  Tools: call_aws, qdrant-store, qdrant-find, run_agents_parallel │
-│  Role: Discover one service group, store in KB                   │
-│                                                                  │
-│  Normal flow (< 50 resources):                                   │
-│    call_aws("describe-vpcs --query ...") → qdrant-store → done   │
-│                                                                  │
-│  Large resource flow (50+ resources):                            │
-│    call_aws("list-buckets --query Buckets[].Name")               │
-│    → sees 1000 buckets                                           │
-│    → run_agents_parallel([                                       │
-│        "Detail buckets 1-25, store in KB",                       │
-│        "Detail buckets 26-50, store in KB",                      │
-│        "Detail buckets 51-75, store in KB",                      │
-│        ...                                                       │
-│      ])                                                          │
-└──────┬───────────────────────────────────────────────────────────┘
-       │ run_agents_parallel
-       │ (via aura-worker MCP, same endpoint)
+│  DISCOVERY WORKERS (port 8080, called 5 at a time)                │
+│  Config: aws-discovery-agent.toml                                 │
+│  Tools: discover_and_store (via aura-qdrant MCP)                  │
+│  Role: One tool call per service type                             │
+│                                                                   │
+│  Each worker makes exactly ONE tool call:                         │
+│    discover_and_store(service_type="ec2/vpc", ...)                │
+│                                                                   │
+│  discover_and_store internally:                                   │
+│    1. Calls AWS via boto3 (not through the LLM)                   │
+│    2. Parses the response, builds [RESOURCE] documents            │
+│    3. Embeds with FastEmbed                                       │
+│    4. Upserts into Qdrant with deterministic ARN-based IDs        │
+│    5. Returns: "Stored 42 ec2/vpc resources"                      │
+│                                                                   │
+│  NO raw AWS data passes through the LLM context.                  │
+└──────┬────────────────────────────────────────────────────────────┘
+       │ boto3 (inside discover_and_store)
        ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  SUB-WORKERS (port 8080, called M times in parallel)             │
-│  Same config as workers — but these handle a specific chunk      │
-│  and do NOT sub-delegate further (max 1 level of delegation)     │
-│                                                                  │
-│  call_aws("get-bucket-tagging --bucket X --query ...")           │
-│  qdrant-store(bucket details)                                    │
-│  → return summary to parent worker                               │
-└──────────────────────────────────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  QDRANT KNOWLEDGE BASE (port 6333)                               │
-│  Shared across all agents — orchestrator, workers, sub-workers   │
-│                                                                  │
-│  Collection: aws_resources                                       │
-│  All discovery results end up here regardless of which agent     │
-│  stored them. Orchestrator reads from here for synthesis.        │
+│  QDRANT KNOWLEDGE BASE (port 6333)                                │
+│  Shared across orchestrator and workers                           │
+│                                                                   │
+│  Collection: aws_resources                                        │
+│  Deterministic IDs: md5(ARN) → same resource = overwrite          │
+│  Result: 363 resources, 10 service types, 0 duplicates            │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+**Key change from earlier architecture:** Workers no longer use `call_aws` + `bulk_store_resources`
+(two tool calls, data passes through LLM). They now use `discover_and_store` (one tool call,
+boto3 + Qdrant write happens inside the MCP server, LLM sees only a summary). This eliminates
+context window pressure entirely. Sub-workers are no longer needed.
 
 ## Delegation Rules
 
 ### When the Orchestrator Delegates
 
-The orchestrator NEVER queries AWS directly. It always delegates via `run_agent`
-or `run_agents_parallel`. Its job is to:
+The orchestrator NEVER queries AWS directly. It delegates via `run_agents_parallel`
+(never `run_agent` for discovery). Its job is to:
 
-1. Determine scope (which services, which regions)
-2. Get resource counts (via a worker)
-3. Dispatch parallel workers per service
-4. Synthesize results from the knowledge base
+1. Generate a scan ID
+2. Dispatch batch 1 (5 workers: VPCs, EC2, S3, Lambda, IAM)
+3. Dispatch batch 2 (5 workers: security groups, subnets, LBs, Route53, CloudFormation)
+4. Run `retry_incomplete` to fill gaps
 5. Report to user
 
-### When a Worker Sub-Delegates
+### Workers Use discover_and_store
 
-A worker queries AWS directly for most tasks. It sub-delegates only when:
-
-| Condition | Action |
-|-----------|--------|
-| Resource count > 50 | Split into chunks, use run_agents_parallel |
-| call_aws response truncated or too large | Split the query into smaller ranges |
-| Detailed enumeration needed on many items | Chunk by ID ranges |
-
-### Chunk Size Guidelines
-
-| Resource Type | Chunk Size | Reason |
-|--------------|-----------|--------|
-| S3 buckets | 25 per worker | Each needs location, tags, versioning, encryption checks |
-| VPCs | 10 per worker | Each has subnets, route tables, SGs to enumerate |
-| EC2 instances | 20 per worker | Need SG, subnet, IAM role details |
-| Lambda functions | 30 per worker | Relatively lightweight per function |
-| IAM roles | 25 per worker | Need attached policies, trust policy |
-| Security groups | 20 per worker | Need full inbound/outbound rule details |
-
-### Delegation Depth Limit
+Workers no longer need to sub-delegate. Each worker makes a single `discover_and_store`
+call that handles everything internally:
 
 ```
-Orchestrator → Worker → Sub-Worker → (STOP, no further delegation)
+Worker receives: "Use discover_and_store: service_type=ec2/vpc, ..."
+Worker calls:    discover_and_store(service_type="ec2/vpc", collection_name="aws_resources", ...)
+Tool internally: boto3.client("ec2").describe_vpcs() → parse → embed → qdrant.upsert()
+Tool returns:    "Discovered and stored 42 ec2/vpc resources"
 ```
 
-Sub-workers do NOT delegate further. This prevents infinite recursion and keeps
-the pattern predictable. One level of delegation is sufficient because sub-workers
-handle a small enough chunk to fit in a single context window.
+Because `discover_and_store` calls AWS via boto3 and writes to Qdrant inside the MCP
+server process, the raw AWS data never enters any LLM context. A worker handling 200
+security groups uses the same context as one handling 3 VPCs.
+
+### Delegation Depth
+
+```
+Orchestrator → Worker → discover_and_store → (done, no further delegation)
+```
+
+The previous architecture had `Orchestrator → Worker → Sub-Worker` for large resource
+sets. Sub-workers are no longer needed because `discover_and_store` handles any resource
+count internally via boto3 pagination.
 
 ## Service Components
 
 | Component | Port | Config | Role |
 |-----------|------|--------|------|
 | Qdrant DB | 6333 | Docker image | Persistent vector storage |
-| AWS MCP (via mcp-proxy) | 8091 | mcp-proxy wrapping awslabs.aws-api-mcp-server | AWS API access |
-| Qdrant MCP | 8000 | mcp-server-qdrant | KB read/write |
-| Aura Worker MCP | 8095 | mcp-proxy wrapping mcp-servers/aura-worker/server.py | Agent delegation |
-| Worker Aura | 8080 | aws-discovery-agent.toml | Discovery execution |
-| Orchestrator Aura | 3030 | aws-orchestrator-agent.toml | Coordination |
+| Custom Qdrant MCP (via mcp-proxy) | 8000 | mcp-proxy wrapping `mcp-servers/aura-qdrant/server.py` | `discover_and_store`, KB read/write, metadata-filtered search |
+| AWS MCP (via mcp-proxy) | 8091 | mcp-proxy wrapping awslabs.aws-api-mcp-server | Read-only AWS API access (for non-discovery queries) |
+| Aura Worker MCP (via mcp-proxy) | 8095 | mcp-proxy wrapping `mcp-servers/aura-worker/server.py` | Agent delegation with throttling |
+| Worker Aura | 8080 | aws-discovery-agent.toml | Discovery execution (called by worker MCP) |
+| Orchestrator Aura | 3030 | aws-orchestrator-agent.toml | Coordination, dispatches 2x5 workers |
 
-## Data Flow Example: 1000 S3 Buckets
+## Data Flow Example: Full Environment Discovery
 
 ```
-1. User → Orchestrator: "Discover all S3 buckets"
+1. User → Orchestrator: "Discover my AWS environment"
 
-2. Orchestrator → Worker (via run_agent):
-   "Count S3 buckets: aws s3api list-buckets --query 'length(Buckets)'"
-   → Worker returns: "1000 buckets"
+2. Orchestrator generates scan ID: scan-2026-03-23-001
 
-3. Orchestrator → Workers (via run_agents_parallel):
-   "Discover S3 buckets and store in KB"
-   → Single worker receives task
+3. Orchestrator → run_agents_parallel (batch 1, 5 workers):
+   Worker 1: "discover_and_store: ec2/vpc"
+   Worker 2: "discover_and_store: ec2/instance"
+   Worker 3: "discover_and_store: s3/bucket"
+   Worker 4: "discover_and_store: lambda/function"
+   Worker 5: "discover_and_store: iam/role"
 
-4. Worker runs: aws s3api list-buckets --query "Buckets[].Name"
-   → Gets list of 1000 bucket names
-   → Decides: 1000 > 50, need to sub-delegate
+   Each worker internally:
+     discover_and_store("ec2/vpc", ...) →
+       boto3.client("ec2").describe_vpcs() →
+       parse 42 VPCs → embed → qdrant.upsert() →
+       return "Stored 42 ec2/vpc resources"
 
-5. Worker → Sub-Workers (via run_agents_parallel, 40 workers):
-   [
-     "Detail buckets bucket-001 through bucket-025. For each:
-      aws s3api get-bucket-location, get-bucket-tagging.
-      Store in qdrant with collection_name aws_resources.",
-     "Detail buckets bucket-026 through bucket-050...",
-     ... (40 chunks of 25)
-   ]
+   Workers run with MAX_CONCURRENT=2, DELAY_BETWEEN_WORKERS=5s
+   to stay within Bedrock rate limits.
 
-6. Each sub-worker:
-   - Runs 2-3 aws calls per bucket (location, tags, versioning)
-   - Stores each bucket in Qdrant
-   - Returns: "25 buckets stored"
+4. Orchestrator → run_agents_parallel (batch 2, 5 workers):
+   Worker 6:  "discover_and_store: ec2/security-group"
+   Worker 7:  "discover_and_store: ec2/subnet"
+   Worker 8:  "discover_and_store: elbv2/load-balancer"
+   Worker 9:  "discover_and_store: route53/hosted-zone"
+   Worker 10: "discover_and_store: cloudformation/stack"
 
-7. Worker collects: "1000 buckets stored by 40 sub-workers"
-   → Returns summary to orchestrator
+5. Orchestrator → retry_incomplete:
+   Checks Qdrant for stored service types vs expected list.
+   Retries any that failed (sequential, with delays).
 
-8. Orchestrator:
-   - Searches Qdrant for all S3 data
-   - Reports: "1000 S3 buckets discovered and cataloged"
+6. Orchestrator reports:
+   "363 resources discovered across 10 service types. 0 errors."
 
-Total context used by orchestrator: ~2000 tokens (summaries only)
-Total context used by each sub-worker: ~5000 tokens (25 buckets)
-No single agent exceeds context limits.
+Context used by orchestrator: ~3000 tokens (worker summaries only)
+Context used by each worker: ~500 tokens (one tool call + summary)
+Zero raw AWS data in any LLM context.
 ```
 
 ## How to Run
@@ -186,36 +167,39 @@ No single agent exceeds context limits.
 
 ```bash
 # 1. Start Qdrant
-docker run -d --name qdrant -p 6333:6333 qdrant/qdrant
+docker run -d --name qdrant -p 6333:6333 -v qdrant_data:/qdrant/storage qdrant/qdrant
 
-# 2. Start AWS MCP (via mcp-proxy)
+# 2. Set credentials
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-east-1
-uvx mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8091 \
+
+# 3. Start custom Qdrant MCP (port 8000 — discover_and_store + KB operations)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8000 \
+  -e QDRANT_URL http://localhost:6333 \
+  -- uv run mcp-servers/aura-qdrant/server.py &
+
+# 4. Start AWS MCP (port 8091 — for non-discovery queries)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8091 \
   -e READ_OPERATIONS_ONLY true -e AWS_REGION $AWS_REGION \
   -e AWS_ACCESS_KEY_ID $AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY $AWS_SECRET_ACCESS_KEY \
   -- awslabs.aws-api-mcp-server &
 
-# 3. Start Qdrant MCP
-QDRANT_URL=http://localhost:6333 COLLECTION_NAME=aws_resources \
-  mcp-server-qdrant --transport streamable-http &
-
-# 4. Start Worker Aura (port 8080)
+# 5. Start worker aura (port 8080)
 CONFIG_PATH=examples/mcp-servers/aws/aws-discovery-agent.toml \
   aura-web-server &
 
-# 5. Start Aura Worker MCP (port 8095, wraps worker aura)
-uvx mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8095 \
+# 6. Start worker MCP (port 8095 — agent delegation with throttling)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8095 \
   -e AURA_WORKER_URL http://127.0.0.1:8080 \
-  -- python mcp-servers/aura-worker/server.py &
+  -- uv run mcp-servers/aura-worker/server.py &
 
-# 6. Start Orchestrator Aura (port 3030)
+# 7. Start orchestrator (port 3030)
 CONFIG_PATH=examples/mcp-servers/aws/aws-orchestrator-agent.toml \
   aura-web-server --port 3030 &
 
-# 7. Run discovery
+# 8. Discover everything
 curl -s http://localhost:3030/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Run a full environment discovery"}]}'
+  -d '{"messages":[{"role":"user","content":"Discover my AWS environment"}]}'
 ```
 
 ### Docker Compose
@@ -227,7 +211,7 @@ export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-east-1
 docker compose up -d
 curl -s http://localhost:3030/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Run a full environment discovery"}]}'
+  -d '{"messages":[{"role":"user","content":"Discover my AWS environment"}]}'
 ```
 
 ## Key Design Decisions
@@ -235,18 +219,31 @@ curl -s http://localhost:3030/v1/chat/completions \
 | Decision | Rationale |
 |----------|-----------|
 | Orchestrator doesn't query AWS | Keeps orchestrator context tiny — only summaries |
-| Workers can sub-delegate | Handles large resource sets without context overflow |
-| Max 1 level of delegation | Prevents infinite recursion, keeps pattern predictable |
+| `discover_and_store` replaces `call_aws` + `bulk_store` | One tool call, zero LLM data relay. boto3 + Qdrant happen inside the MCP server. |
+| Custom Qdrant MCP replaces generic mcp-server-qdrant | Deterministic ARN-based IDs, metadata-filtered search, `discover_and_store` |
+| 2 batches of 5 workers (not all 10 at once) | Respects Bedrock rate limits with `MAX_CONCURRENT=2` and staggered starts |
+| `retry_incomplete` after parallel batches | Rate limit errors are expected — automated gap-filling handles them |
 | All agents share Qdrant | Single source of truth, any agent can read any other's results |
-| Workers are the same config | No special sub-worker config — same discovery agent handles both roles |
-| mcp-proxy for HTTP transport | Works around aura's per-request MCP connection lifecycle |
+| mcp-proxy for HTTP transport | Bridges stdio MCP servers to aura's http_streamable transport |
+| All configs use http_streamable transport | Consistent transport across all MCP connections |
+
+## Performance: Tested Numbers
+
+| Metric | Result |
+|--------|--------|
+| Total resources discovered | 363 |
+| Service types | 10 (VPCs, EC2, security groups, subnets, S3, Lambda, IAM, ELBv2, Route53, CloudFormation) |
+| Duplicate resources | 0 (deterministic ARN-based IDs) |
+| Discovery errors | 0 |
+| Architecture | Orchestrator + 2 batches of 5 parallel workers |
 
 ## Comparison to Single-Agent Discovery
 
-| Metric | Single Agent | Orchestrator + Workers |
-|--------|-------------|----------------------|
-| Max resources per request | ~100 (context limit) | Unlimited (chunked) |
-| Time for 5 services | 30-60s (sequential) | 39s (parallel) |
-| Time for 1000 S3 buckets | Fails (context overflow) | ~2 min (40 parallel workers) |
-| Context usage | Accumulates per turn | Each worker starts fresh |
-| Failure impact | Entire scan lost | Only failed chunk retried |
+| Metric | Single Agent | Orchestrator + discover_and_store |
+|--------|-------------|----------------------------------|
+| Max resources per request | ~100 (context limit) | Unlimited (boto3 handles all sizes) |
+| Context used per service | 10K-50K tokens (raw AWS JSON) | ~500 tokens (summary string only) |
+| Time for 10 services | Fails (context overflow after ~3) | 2-3 min (2 parallel batches) |
+| Duplicate handling | Manual — agent must remember | Automatic — ARN-based deterministic IDs |
+| Failure recovery | Entire scan lost | `retry_incomplete` fills gaps automatically |
+| LLM data exposure | Full AWS response in context | Zero — boto3 + Qdrant happen server-side |

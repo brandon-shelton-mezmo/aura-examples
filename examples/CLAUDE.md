@@ -90,11 +90,12 @@ This directory contains aura agent configuration examples organized by feature c
 ### AWS Infrastructure Discovery (`mcp-servers/aws/`)
 | File | Tier | Provider | Description |
 |------|------|----------|-------------|
+| `aws-orchestrator-agent.toml` | **Orchestrator** | Bedrock | Primary entry point — dispatches 2 batches of 5 parallel workers for full environment discovery |
 | `aws-mcp-preflight.toml` | Preflight | Bedrock | Environment validation and stack configuration advisor |
 | `aws-mcp-preflight-openai.toml` | Preflight | OpenAI | Environment validation and stack configuration advisor |
-| `aws-discovery-agent.toml` | Use Case | Bedrock | Discover and catalog AWS resources into Qdrant KB |
-| `aws-discovery-agent-openai.toml` | Use Case | OpenAI | Discover and catalog AWS resources into Qdrant KB |
-| `aws-discovery-agent-dev.toml` | Use Case | OpenAI | Discovery agent with local Qdrant (no server needed) |
+| `aws-discovery-agent.toml` | Worker | Bedrock | Discovery worker — handles individual service types delegated by the orchestrator |
+| `aws-discovery-agent-openai.toml` | Worker | OpenAI | Discovery worker (OpenAI variant) |
+| `aws-discovery-agent-dev.toml` | Worker | OpenAI | Discovery agent with local Qdrant (no server needed) |
 | `aws-capacity-planning-agent.toml` | Use Case | Bedrock | Quota analysis, scaling headroom, underutilization detection |
 | `aws-capacity-planning-agent-openai.toml` | Use Case | OpenAI | Quota analysis, scaling headroom, underutilization detection |
 | `aws-change-audit-agent.toml` | Use Case | Bedrock | CloudTrail change detection and risk-rated audit reports |
@@ -103,6 +104,12 @@ This directory contains aura agent configuration examples organized by feature c
 | `aws-incident-response-agent-openai.toml` | Use Case | OpenAI | Real-time incident triage and blast radius analysis |
 | `aws-postmortem-agent.toml` | Use Case | Bedrock | Blameless post-mortem construction with timeline reconstruction |
 | `aws-postmortem-agent-openai.toml` | Use Case | OpenAI | Blameless post-mortem construction with timeline reconstruction |
+
+### Custom MCP Servers (`mcp-servers/` at repo root)
+| Server | Location | Description |
+|--------|----------|-------------|
+| **aura-qdrant** | `mcp-servers/aura-qdrant/server.py` | Custom Qdrant MCP — `discover_and_store` calls AWS via boto3 and stores in Qdrant directly (no LLM data relay). Replaces generic `mcp-server-qdrant`. 12 service types, deterministic ARN-based IDs, metadata-filtered search. |
+| **aura-worker** | `mcp-servers/aura-worker/server.py` | Agent delegation MCP — `run_agents_parallel` dispatches tasks to worker aura instances. Throttling (MAX_CONCURRENT=2), staggered starts, retry on rate limits. |
 
 ### Cross-Platform (`mcp-servers/cross-platform/`)
 | File | Tier | Provider | Description |

@@ -11,34 +11,50 @@ operates in strict read-only mode.
 
 ## Quick Start
 
-Five commands from zero to your first discovery scan:
+Start the orchestrator stack and discover your entire environment with one prompt:
 
 ```bash
-# 1. Start a Qdrant knowledge base (stores discovered resources on disk)
-docker run -d --name qdrant -p 6333:6333 -v qdrant_data:/qdrant/storage qdrant/qdrant
-
-# 2. Set your AWS credentials (the agents need read-only access)
+# 1. Set credentials
 export AWS_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=AKIA...
 export AWS_SECRET_ACCESS_KEY=...
 
-# 3. Run the preflight check (validates credentials, connectivity, and Qdrant)
-CONFIG_PATH=examples/mcp-servers/aws/aws-mcp-preflight.toml aura-web-server
+# 2. Start Qdrant
+docker run -d --name qdrant -p 6333:6333 -v qdrant_data:/qdrant/storage qdrant/qdrant
 
-# 4. Ask the preflight agent to validate everything
+# 3. Start custom Qdrant MCP (discover_and_store + KB operations)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8000 \
+  -e QDRANT_URL http://localhost:6333 \
+  -- uv run mcp-servers/aura-qdrant/server.py &
+
+# 4. Start AWS MCP (read-only API access)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8091 \
+  -e READ_OPERATIONS_ONLY true -e AWS_REGION $AWS_REGION \
+  -e AWS_ACCESS_KEY_ID $AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY $AWS_SECRET_ACCESS_KEY \
+  -- awslabs.aws-api-mcp-server &
+
+# 5. Start worker aura (port 8080)
+CONFIG_PATH=examples/mcp-servers/aws/aws-discovery-agent.toml aura-web-server &
+
+# 6. Start worker MCP (agent delegation with throttling)
+mcp-proxy --transport streamablehttp --host 127.0.0.1 --port 8095 \
+  -e AURA_WORKER_URL http://127.0.0.1:8080 \
+  -- uv run mcp-servers/aura-worker/server.py &
+
+# 7. Start orchestrator (port 3030)
+CONFIG_PATH=examples/mcp-servers/aws/aws-orchestrator-agent.toml aura-web-server --port 3030 &
+
+# 8. Discover everything
 curl -s http://localhost:3030/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Run preflight checks and recommend agent configuration."}]}'
-
-# 5. If preflight passes, switch to the discovery agent and scan
-CONFIG_PATH=examples/mcp-servers/aws/aws-discovery-agent.toml aura-web-server
+  -d '{"messages":[{"role":"user","content":"Discover my AWS environment"}]}'
 ```
 
-Then ask: "Discover all resources in this AWS account."
+The orchestrator dispatches 2 batches of 5 parallel workers. Each worker calls
+`discover_and_store` which hits AWS via boto3 and writes directly to Qdrant -- no data
+passes through the LLM. Tested result: 363 resources, 10 service types, 0 duplicates.
 
-The discovery agent will scan your VPCs, EC2 instances, ECS clusters, Lambda functions,
-RDS databases, S3 buckets, and more -- storing structured summaries in the knowledge base
-as it goes. Future sessions read from the knowledge base instead of re-scanning AWS.
+Future sessions read from the knowledge base instead of re-scanning AWS.
 
 ## Prerequisites
 
@@ -90,8 +106,9 @@ variant (append `-openai` to the filename). See [Configuration](#configuration) 
 
 | Agent | Configuration File | Purpose | When to Use |
 |---|---|---|---|
+| **Orchestrator** | `aws-orchestrator-agent.toml` | Dispatches 2 batches of 5 parallel workers for full environment discovery | **Primary entry point** -- use this for discovery |
 | Preflight | `aws-mcp-preflight.toml` | Validates credentials, Qdrant, and AWS connectivity; recommends which agents to run | First -- always run before anything else |
-| Discovery | `aws-discovery-agent.toml` | Scans your AWS environment and stores every resource in the knowledge base | Second -- builds the foundation |
+| Discovery Worker | `aws-discovery-agent.toml` | Handles individual service discovery tasks delegated by the orchestrator | Started as a service on port 8080 -- the orchestrator calls it |
 | Discovery (dev) | `aws-discovery-agent-dev.toml` | Lighter discovery with local storage (no separate Qdrant server needed) | Local development and experimentation |
 | Change Audit | `aws-change-audit-agent.toml` | Detects recent changes via CloudTrail; compares against the knowledge base; produces risk-rated reports | After discovery, on a schedule (hourly/daily) |
 | Incident Response | `aws-incident-response-agent.toml` | Triages active incidents: correlates alarms, changes, and health to answer "What broke and why?" | During an active incident |
@@ -99,6 +116,15 @@ variant (append `-openai` to the filename). See [Configuration](#configuration) 
 | Post-Mortem | `aws-postmortem-agent.toml` | Reconstructs incident timelines, identifies contributing factors, stores lessons learned | After an incident is resolved |
 
 Also included: `docker-compose.yml` -- starts Qdrant and the agent together.
+
+### Custom MCP Servers
+
+The orchestrator workflow uses two custom MCP servers (in `mcp-servers/` at the repo root):
+
+| Server | Location | Purpose |
+|--------|----------|---------|
+| **aura-qdrant** | `mcp-servers/aura-qdrant/server.py` | Custom Qdrant MCP with `discover_and_store` -- calls AWS via boto3 and stores in Qdrant directly. No data passes through the LLM. Replaces generic `mcp-server-qdrant`. |
+| **aura-worker** | `mcp-servers/aura-worker/server.py` | Agent delegation MCP -- `run_agents_parallel` dispatches tasks to worker aura instances with throttling and retry. |
 
 ## Gradual Adoption Path
 
@@ -140,22 +166,32 @@ You do not need to deploy all agents at once. Start small and expand as you buil
 ## How It Works
 
 ```
-You (curl / chat UI)
+You: "Discover my AWS environment"
   |
   v
-Aura Agent (reads the configuration file, runs the workflow)
+Orchestrator Agent (port 3030)
   |
-  |--- AWS API Server -------> Your AWS Account
-  |    (read-only queries)     EC2, ECS, Lambda, RDS, S3, IAM, CloudTrail...
+  |--- aura-worker MCP (port 8095) -----------> Worker Aura (port 8080)
+  |    run_agents_parallel (2 batches of 5)        |
+  |                                                |--- aura-qdrant MCP (port 8000)
+  |                                                |    discover_and_store: calls AWS
+  |                                                |    via boto3, stores in Qdrant
+  |                                                |    directly. NO LLM data relay.
+  |                                                |
+  |                                                |--- AWS MCP (port 8091)
+  |                                                     read-only API access
   |
-  |--- Qdrant Server --------> Qdrant Knowledge Base (on disk)
-       (store + search)        Persists across sessions
+  |--- aura-qdrant MCP (port 8000) -----------> Qdrant KB (port 6333)
+       post-discovery queries + synthesis        Persists to disk
 ```
 
-You send a message, the agent queries AWS (read-only) and stores what it finds in the
-knowledge base. In future sessions it reads from the knowledge base first and only hits
-AWS for fresh or missing data. All data stays on your infrastructure. If using Bedrock,
-even the reasoning traffic stays inside your AWS account.
+The orchestrator never queries AWS directly. It dispatches workers via the worker MCP.
+Workers use `discover_and_store` which calls AWS via boto3 and writes results to Qdrant
+in a single tool call -- raw AWS data never enters the LLM context. The orchestrator
+reads from Qdrant after all workers complete to synthesize the final report.
+
+All data stays on your infrastructure. If using Bedrock, even the reasoning traffic
+stays inside your AWS account.
 
 ## Usage Examples
 
@@ -258,6 +294,15 @@ and `Get*` for the services you need.
 
 ## Links
 
+- [Orchestrator Architecture](../../../docs/orchestrator-architecture.md) -- Parallel
+  agent discovery design, data flow, and performance numbers
+- [Custom Qdrant MCP](../../../mcp-servers/aura-qdrant/README.md) -- discover_and_store
+  tool, 12 service types, deterministic IDs
+- [Custom Worker MCP](../../../mcp-servers/aura-worker/README.md) -- Agent delegation,
+  throttling config, retry logic
+- [Quick Start](../../../docs/quick-start.md) -- Copy-paste commands to start everything
+- [Scaling Discovery](../../../docs/scaling-discovery.md) -- How discover_and_store
+  solves the context window problem
 - [Cost Estimate](../../../docs/cost-estimate.md) -- Bedrock, OpenAI, and Qdrant cost
   breakdown by environment size
 - [Security Review](../../../docs/security-review.md) -- Read-only enforcement, secret
@@ -266,5 +311,3 @@ and `Get*` for the services you need.
   for all agents
 - [AWS MCP Server Docs](https://awslabs.github.io/mcp/servers/aws-api-mcp-server) --
   Official documentation for the AWS API server
-- [Qdrant MCP Server](https://github.com/qdrant/mcp-server-qdrant) -- Official
-  documentation for the knowledge base server
