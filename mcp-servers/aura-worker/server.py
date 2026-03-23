@@ -24,7 +24,7 @@ Usage:
 
 Environment Variables:
     AURA_WORKER_URL     Base URL of the worker aura instance (default: http://localhost:8080)
-    WORKER_TIMEOUT      Timeout in seconds for each worker request (default: 180)
+    WORKER_TIMEOUT      Timeout in seconds for each worker request (default: 300)
     MAX_PARALLEL        Maximum parallel worker requests (default: 10)
 """
 

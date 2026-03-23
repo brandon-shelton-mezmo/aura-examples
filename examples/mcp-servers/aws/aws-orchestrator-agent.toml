@@ -64,29 +64,32 @@ collection_name is ALWAYS "aws_resources".
 
 Generate a scan ID (scan-YYYY-MM-DD-NNN). Then TWO run_agents_parallel calls.
 
+Workers use discover_and_store which calls AWS directly and stores in Qdrant —
+NO data passes through the LLM context. Each worker prompt is just one line.
+
 BATCH 1 (your first tool call — 5 workers):
 ```
 run_agents_parallel(prompts=[
-  "Discover VPCs. call_aws: aws ec2 describe-vpcs --region us-east-1. Then bulk_store_resources, service=ec2, resource_type=vpc, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover EC2 instances. call_aws: aws ec2 describe-instances --region us-east-1. Then bulk_store_resources, service=ec2, resource_type=instance, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover S3 buckets. call_aws: aws s3api list-buckets. Then bulk_store_resources, service=s3, resource_type=bucket, region=global, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover Lambda. call_aws: aws lambda list-functions --region us-east-1. Then bulk_store_resources, service=lambda, resource_type=function, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover IAM roles. call_aws: aws iam list-roles --max-items 50. Then bulk_store_resources, service=iam, resource_type=role, region=global, collection_name=aws_resources, scan_id=SCAN. Report count."
+  "Use discover_and_store: service_type=ec2/vpc, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ec2/instance, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=s3/bucket, collection_name=aws_resources, scan_id=SCAN",
+  "Use discover_and_store: service_type=lambda/function, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=iam/role, collection_name=aws_resources, scan_id=SCAN"
 ])
 ```
 
 BATCH 2 (your second tool call — 5 more workers):
 ```
 run_agents_parallel(prompts=[
-  "Discover security groups. call_aws: aws ec2 describe-security-groups --region us-east-1. Then bulk_store_resources, service=ec2, resource_type=security-group, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover subnets. call_aws: aws ec2 describe-subnets --region us-east-1. Then bulk_store_resources, service=ec2, resource_type=subnet, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover load balancers. call_aws: aws elbv2 describe-load-balancers --region us-east-1. Then bulk_store_resources, service=elbv2, resource_type=load-balancer, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover Route53. call_aws: aws route53 list-hosted-zones. Then bulk_store_resources, service=route53, resource_type=hosted-zone, region=global, collection_name=aws_resources, scan_id=SCAN. Report count.",
-  "Discover CloudFormation stacks. call_aws: aws cloudformation list-stacks --region us-east-1 --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE. Then bulk_store_resources, service=cloudformation, resource_type=stack, region=us-east-1, collection_name=aws_resources, scan_id=SCAN. Report count."
+  "Use discover_and_store: service_type=ec2/security-group, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ec2/subnet, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=elbv2/load-balancer, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=route53/hosted-zone, collection_name=aws_resources, scan_id=SCAN",
+  "Use discover_and_store: service_type=cloudformation/stack, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
 ])
 ```
 
-Replace SCAN with your scan ID. Two batches, 5 workers each, avoids Bedrock rate limits.
+Replace SCAN with your scan ID. Workers call AWS and store directly — no context issues.
 
 ## After BOTH Batches Complete
 
@@ -101,22 +104,21 @@ retry_incomplete(
 )
 ```
 
-This checks Qdrant, finds missing services, and retries them sequentially
-with delays to avoid rate limits. Then report the final summary.
+Then report the final summary.
 
 ## Rules
 - ALWAYS dispatch on your FIRST tool call. No planning, no checking.
 - ALWAYS call retry_incomplete after the two parallel batches.
-- Keep prompts compact — workers know the AWS CLI commands.
+- Workers use discover_and_store — it handles AWS calls and storage internally.
 - If user asks for specific services, adjust the batches accordingly.
-- If user asks for a different region, replace us-east-1 in all prompts.
+- If user asks for a different region, replace us-east-1 in prompts.
 """
 
 # Static context
 context = [
-    "FIRST ACTION on discovery: call run_agents_parallel with 7 prompts. No planning, no checking.",
+    "FIRST ACTION on discovery: call run_agents_parallel. No planning, no checking.",
     "Generate scan IDs yourself: scan-YYYY-MM-DD-NNN format.",
-    "Workers use store_resource (with ARN-based dedup). Use search and store_document for your own queries.",
+    "Workers use discover_and_store — it calls AWS and stores in Qdrant directly. No data goes through LLM context.",
     "Worker responses are truncated to 1500 chars — full data is in Qdrant. Short responses are normal."
 ]
 
