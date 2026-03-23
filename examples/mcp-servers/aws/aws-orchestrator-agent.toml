@@ -88,17 +88,27 @@ run_agents_parallel(prompts=[
 
 Replace SCAN with your scan ID. Two batches, 5 workers each, avoids Bedrock rate limits.
 
-## After Workers Complete
+## After BOTH Batches Complete
 
-Report a summary table:
-| Service | Resources | Status |
-Then total count.
+Call retry_incomplete to check for gaps and fill them:
+```
+retry_incomplete(
+  expected_services=["ec2/vpc", "ec2/instance", "s3/bucket", "lambda/function",
+    "iam/role", "ec2/security-group", "ec2/subnet", "elbv2/load-balancer",
+    "route53/hosted-zone", "cloudformation/stack"],
+  scan_id=SCAN,
+  region="us-east-1"
+)
+```
+
+This checks Qdrant, finds missing services, and retries them sequentially
+with delays to avoid rate limits. Then report the final summary.
 
 ## Rules
-- NEVER call run_agent. ALWAYS run_agents_parallel.
 - ALWAYS dispatch on your FIRST tool call. No planning, no checking.
+- ALWAYS call retry_incomplete after the two parallel batches.
 - Keep prompts compact — workers know the AWS CLI commands.
-- If user asks for specific services, adjust the 3 groups accordingly.
+- If user asks for specific services, adjust the batches accordingly.
 - If user asks for a different region, replace us-east-1 in all prompts.
 """
 

@@ -48,10 +48,10 @@ MAX_RESPONSE_LENGTH = int(os.getenv("MAX_RESPONSE_LENGTH", "1500"))
 # Throttling: controls how many workers hit Bedrock simultaneously.
 # Bedrock has per-model rate limits (tokens/min). Too many concurrent
 # requests causes "Too many tokens" errors.
-MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "3"))
-DELAY_BETWEEN_WORKERS = float(os.getenv("DELAY_BETWEEN_WORKERS", "2.0"))
+MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "2"))
+DELAY_BETWEEN_WORKERS = float(os.getenv("DELAY_BETWEEN_WORKERS", "5.0"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
-RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "10.0"))
+RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "15.0"))
 
 # Semaphore to limit concurrent Bedrock requests
 _semaphore = None
@@ -254,6 +254,119 @@ async def check_worker(
         return f"Worker at {url} is ready ({result['elapsed_seconds']}s response time)"
     except Exception as e:
         return f"Worker at {url} is not responding: {str(e)}"
+
+
+@server.tool()
+async def retry_incomplete(
+    expected_services: list[str],
+    scan_id: str,
+    region: str = "us-east-1",
+    qdrant_url: str = "http://localhost:6333",
+    collection_name: str = "aws_resources",
+    worker_url: Optional[str] = None,
+) -> str:
+    """Check what services are missing from the knowledge base and retry them.
+
+    After a discovery run, some services may have failed due to rate limits.
+    This tool checks Qdrant for what's stored, compares against expected
+    services, and retries the missing ones sequentially with delays.
+
+    Args:
+        expected_services: List of service types that should exist
+                          (e.g., ["ec2/vpc", "ec2/instance", "s3/bucket", "iam/role",
+                                  "lambda/function", "ec2/security-group", "ec2/subnet",
+                                  "elbv2/load-balancer", "route53/hosted-zone",
+                                  "cloudformation/stack"])
+        scan_id: The scan ID to use for stored resources.
+        region: AWS region (default us-east-1).
+        qdrant_url: Qdrant REST API URL (default http://localhost:6333).
+        collection_name: Qdrant collection (default aws_resources).
+        worker_url: Optional override for the worker aura URL.
+    """
+    import httpx as httpx_sync
+
+    url = worker_url or AURA_WORKER_URL
+
+    # Check what's already in Qdrant
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{qdrant_url}/collections/{collection_name}/points/scroll",
+                json={
+                    "limit": 1000,
+                    "with_payload": ["metadata.service", "metadata.resource_type"],
+                    "with_vector": False,
+                },
+            )
+            data = resp.json()
+            points = data.get("result", {}).get("points", [])
+    except Exception as e:
+        return f"Error checking Qdrant: {e}"
+
+    # Count what's stored by service/type
+    stored = set()
+    counts = {}
+    for p in points:
+        meta = p.get("payload", {}).get("metadata", {})
+        svc = meta.get("service", "?")
+        rtype = meta.get("resource_type", "?")
+        key = f"{svc}/{rtype}"
+        stored.add(key)
+        counts[key] = counts.get(key, 0) + 1
+
+    # Find missing services
+    missing = [s for s in expected_services if s not in stored]
+
+    if not missing:
+        summary = "All expected services are present in the knowledge base:\n"
+        for svc, count in sorted(counts.items()):
+            summary += f"  {svc}: {count}\n"
+        return summary
+
+    # Map service/type to discovery prompts
+    service_prompts = {
+        "ec2/vpc": f"Discover VPCs. call_aws: aws ec2 describe-vpcs --region {region}. Then bulk_store_resources, service=ec2, resource_type=vpc, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "ec2/instance": f"Discover EC2 instances. call_aws: aws ec2 describe-instances --region {region}. Then bulk_store_resources, service=ec2, resource_type=instance, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "ec2/security-group": f"Discover security groups. call_aws: aws ec2 describe-security-groups --region {region}. Then bulk_store_resources, service=ec2, resource_type=security-group, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "ec2/subnet": f"Discover subnets. call_aws: aws ec2 describe-subnets --region {region}. Then bulk_store_resources, service=ec2, resource_type=subnet, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "s3/bucket": f"Discover S3 buckets. call_aws: aws s3api list-buckets. Then bulk_store_resources, service=s3, resource_type=bucket, region=global, collection_name={collection_name}, scan_id={scan_id}.",
+        "lambda/function": f"Discover Lambda functions. call_aws: aws lambda list-functions --region {region}. Then bulk_store_resources, service=lambda, resource_type=function, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "iam/role": f"Discover IAM roles. call_aws: aws iam list-roles --max-items 50. Then bulk_store_resources, service=iam, resource_type=role, region=global, collection_name={collection_name}, scan_id={scan_id}.",
+        "elbv2/load-balancer": f"Discover load balancers. call_aws: aws elbv2 describe-load-balancers --region {region}. Then bulk_store_resources, service=elbv2, resource_type=load-balancer, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+        "route53/hosted-zone": f"Discover Route53 hosted zones. call_aws: aws route53 list-hosted-zones. Then bulk_store_resources, service=route53, resource_type=hosted-zone, region=global, collection_name={collection_name}, scan_id={scan_id}.",
+        "cloudformation/stack": f"Discover CloudFormation stacks. call_aws: aws cloudformation list-stacks --region {region} --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE. Then bulk_store_resources, service=cloudformation, resource_type=stack, region={region}, collection_name={collection_name}, scan_id={scan_id}.",
+    }
+
+    # Retry missing services SEQUENTIALLY with delays (to avoid rate limits)
+    retried = []
+    still_missing = []
+
+    for svc in missing:
+        prompt = service_prompts.get(svc)
+        if not prompt:
+            still_missing.append(f"{svc} (no retry prompt available)")
+            continue
+
+        # Wait between retries to avoid rate limits
+        if retried:
+            await asyncio.sleep(RETRY_BASE_DELAY)
+
+        try:
+            result = await _call_worker_with_retry(prompt, url, WORKER_TIMEOUT)
+            retried.append(f"  ✅ {svc}: {result['content'][:200]}")
+        except Exception as e:
+            retried.append(f"  ❌ {svc}: {str(e)[:200]}")
+
+    output = f"## Retry Results\n\n"
+    output += f"Already stored: {len(stored)} service types ({sum(counts.values())} resources)\n"
+    output += f"Missing: {len(missing)} service types\n"
+    output += f"Retried: {len(retried)}\n\n"
+    for r in retried:
+        output += f"{r}\n"
+    if still_missing:
+        output += f"\nCould not retry: {', '.join(still_missing)}\n"
+
+    return output
 
 
 def main():
