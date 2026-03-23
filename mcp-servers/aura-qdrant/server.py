@@ -5,6 +5,7 @@
 #     "mcp[cli]>=1.0.0",
 #     "qdrant-client>=1.12.0",
 #     "fastembed>=0.4.0",
+#     "boto3>=1.35.0",
 # ]
 # ///
 """
@@ -120,9 +121,340 @@ def ensure_collection(collection_name: str, vector_size: int = 384):
                 pass  # Index may already exist
 
 
+# --- AWS Discovery Helper ---
+# This calls AWS directly (via boto3) and stores results in Qdrant,
+# bypassing the LLM for data transfer. The LLM just says WHAT to
+# discover — the tool handles HOW.
+
+# Service configurations: maps service/type to the boto3 call and response key
+AWS_DISCOVERY_CONFIG = {
+    "ec2/vpc": {
+        "client": "ec2",
+        "method": "describe_vpcs",
+        "response_key": "Vpcs",
+        "id_field": "VpcId",
+        "name_fields": ["Tags"],
+    },
+    "ec2/instance": {
+        "client": "ec2",
+        "method": "describe_instances",
+        "response_key": "Reservations",
+        "flatten": "Instances",
+        "id_field": "InstanceId",
+        "name_fields": ["Tags"],
+    },
+    "ec2/security-group": {
+        "client": "ec2",
+        "method": "describe_security_groups",
+        "response_key": "SecurityGroups",
+        "id_field": "GroupId",
+        "name_fields": ["GroupName"],
+    },
+    "ec2/subnet": {
+        "client": "ec2",
+        "method": "describe_subnets",
+        "response_key": "Subnets",
+        "id_field": "SubnetId",
+        "name_fields": ["Tags"],
+    },
+    "s3/bucket": {
+        "client": "s3",
+        "method": "list_buckets",
+        "response_key": "Buckets",
+        "id_field": "Name",
+        "name_fields": ["Name"],
+    },
+    "lambda/function": {
+        "client": "lambda",
+        "method": "list_functions",
+        "response_key": "Functions",
+        "id_field": "FunctionArn",
+        "name_fields": ["FunctionName"],
+    },
+    "iam/role": {
+        "client": "iam",
+        "method": "list_roles",
+        "response_key": "Roles",
+        "id_field": "Arn",
+        "name_fields": ["RoleName"],
+    },
+    "elbv2/load-balancer": {
+        "client": "elbv2",
+        "method": "describe_load_balancers",
+        "response_key": "LoadBalancers",
+        "id_field": "LoadBalancerArn",
+        "name_fields": ["LoadBalancerName"],
+    },
+    "route53/hosted-zone": {
+        "client": "route53",
+        "method": "list_hosted_zones",
+        "response_key": "HostedZones",
+        "id_field": "Id",
+        "name_fields": ["Name"],
+    },
+    "cloudformation/stack": {
+        "client": "cloudformation",
+        "method": "list_stacks",
+        "params": {"StackStatusFilter": ["CREATE_COMPLETE", "UPDATE_COMPLETE"]},
+        "response_key": "StackSummaries",
+        "id_field": "StackName",
+        "name_fields": ["StackName"],
+    },
+    "rds/instance": {
+        "client": "rds",
+        "method": "describe_db_instances",
+        "response_key": "DBInstances",
+        "id_field": "DBInstanceArn",
+        "name_fields": ["DBInstanceIdentifier"],
+    },
+    "dynamodb/table": {
+        "client": "dynamodb",
+        "method": "list_tables",
+        "response_key": "TableNames",
+        "is_string_list": True,
+    },
+}
+
+
+def _extract_name_from_tags(item: dict) -> str:
+    """Extract Name from AWS Tags list."""
+    tags = item.get("Tags", [])
+    if isinstance(tags, list):
+        for tag in tags:
+            if isinstance(tag, dict) and tag.get("Key") == "Name":
+                return tag.get("Value", "")
+    return ""
+
+
+def _build_resource_doc(item: Any, service: str, resource_type: str,
+                        region: str, account: str, scan_id: str,
+                        config: dict) -> tuple[str, str, dict]:
+    """Build a [RESOURCE] document, ARN, and metadata from a raw AWS item."""
+
+    # Handle string-list resources (e.g., DynamoDB table names)
+    if isinstance(item, str):
+        arn = f"arn:aws:{service}:{region}:{account}:{resource_type}/{item}"
+        doc = (
+            f"[RESOURCE] Service: {service} | Type: {resource_type} | Version: 1 | Scan: {scan_id}\n"
+            f"ARN: {arn}\n"
+            f"Name: {item} | Region: {region} | Account: {account}\n"
+            f"Discovered: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+            f"---\n{service.upper()} {resource_type} '{item}' in {region}."
+        )
+        meta = {"arn": arn, "service": service, "resource_type": resource_type,
+                "region": region, "account": account, "version": 1, "scan_id": scan_id,
+                "pillar": "aws_environment"}
+        return doc, arn, meta
+
+    if not isinstance(item, dict):
+        return None, None, None
+
+    # Extract ARN
+    arn = (
+        item.get("Arn") or item.get("ARN") or
+        item.get("LoadBalancerArn") or item.get("FunctionArn") or
+        item.get("DBInstanceArn") or item.get("TopicArn") or
+        None
+    )
+
+    id_field = config.get("id_field", "Id")
+    resource_id = item.get(id_field, "unknown")
+
+    if not arn:
+        arn = f"arn:aws:{service}:{region}:{account}:{resource_type}/{resource_id}"
+
+    # Extract name
+    name = ""
+    for nf in config.get("name_fields", []):
+        if nf == "Tags":
+            name = _extract_name_from_tags(item)
+        else:
+            name = item.get(nf, "")
+        if name:
+            break
+    if not name:
+        name = str(resource_id)
+
+    # Build properties
+    skip_keys = {"Tags", "Instances", "ResponseMetadata"}
+    def _safe_value(v):
+        """Convert value to string, handling datetime and complex types."""
+        if isinstance(v, (dict, list)):
+            try:
+                return json.dumps(v, default=str)
+            except (TypeError, ValueError):
+                return str(v)
+        return str(v)
+
+    props = "\n".join(f"  {k}: {_safe_value(v)}"
+                      for k, v in item.items()
+                      if k not in skip_keys and v is not None)
+
+    # Tags
+    tags_list = item.get("Tags", [])
+    tags_str = ", ".join(
+        f"{t.get('Key', '?')}={t.get('Value', '?')}"
+        for t in tags_list
+    ) if isinstance(tags_list, list) else ""
+
+    # Relationships
+    relationships = []
+    if item.get("VpcId"):
+        relationships.append(f"  → VPC: {item['VpcId']}")
+    if item.get("SubnetId"):
+        relationships.append(f"  → Subnet: {item['SubnetId']}")
+    if item.get("Role"):
+        relationships.append(f"  → IAM Role: {item['Role']}")
+    sgs = item.get("SecurityGroups", [])
+    if isinstance(sgs, list):
+        for sg in sgs:
+            sg_id = sg if isinstance(sg, str) else sg.get("GroupId", str(sg))
+            relationships.append(f"  → Security Group: {sg_id}")
+    rel_str = "\n".join(relationships) if relationships else "  (none identified)"
+
+    doc = (
+        f"[RESOURCE] Service: {service} | Type: {resource_type} | Version: 1 | Scan: {scan_id}\n"
+        f"ARN: {arn}\n"
+        f"Name: {name} | Region: {region} | Account: {account}\n\n"
+        f"Configuration:\n{props}\n\n"
+        f"Tags: {tags_str or '(none)'}\n\n"
+        f"Relationships:\n{rel_str}\n\n"
+        f"Discovered: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+        f"---\n{service.upper()} {resource_type} '{name}' in {region}."
+    )
+
+    meta = {
+        "arn": arn, "service": service, "resource_type": resource_type,
+        "region": region, "account": account, "version": 1, "scan_id": scan_id,
+        "pillar": "aws_environment",
+        "stored_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    return doc, arn, meta
+
+
 # --- MCP Server ---
 
 server = FastMCP("aura-qdrant")
+
+
+@server.tool()
+def discover_and_store(
+    service_type: str,
+    collection_name: str,
+    scan_id: str,
+    region: str = "us-east-1",
+    account: str = "",
+) -> str:
+    """Discover AWS resources and store them directly — NO LLM data relay needed.
+
+    This tool calls AWS (via boto3) and stores each resource in Qdrant in one step.
+    The LLM just tells it WHAT to discover. The tool handles the API call, JSON
+    parsing, document generation, embedding, and storage internally.
+
+    This avoids the context window problem — the raw AWS data never passes through
+    the LLM's context. The LLM sees only a summary of counts and any issues.
+
+    Args:
+        service_type: What to discover. Format: "service/type". Valid values:
+                      ec2/vpc, ec2/instance, ec2/security-group, ec2/subnet,
+                      s3/bucket, lambda/function, iam/role, elbv2/load-balancer,
+                      route53/hosted-zone, cloudformation/stack, rds/instance,
+                      dynamodb/table
+        collection_name: Qdrant collection (typically 'aws_resources').
+        scan_id: Scan identifier (e.g., 'scan-2026-03-20-001').
+        region: AWS region (default 'us-east-1'). Used for regional services.
+                Global services (S3, IAM, Route53) ignore this.
+        account: AWS account ID (auto-detected if not provided).
+    """
+    import boto3
+
+    config = AWS_DISCOVERY_CONFIG.get(service_type)
+    if not config:
+        valid = ", ".join(sorted(AWS_DISCOVERY_CONFIG.keys()))
+        return f"Unknown service_type '{service_type}'. Valid: {valid}"
+
+    ensure_collection(collection_name)
+
+    # Auto-detect account if not provided
+    if not account:
+        try:
+            sts = boto3.client("sts")
+            account = sts.get_caller_identity()["Account"]
+        except Exception:
+            account = "unknown"
+
+    # Determine the effective region for the API call
+    client_name = config["client"]
+    global_services = {"s3", "iam", "route53"}
+    effective_region = None if client_name in global_services else region
+
+    try:
+        if effective_region:
+            client = boto3.client(client_name, region_name=effective_region)
+        else:
+            client = boto3.client(client_name)
+
+        method = getattr(client, config["method"])
+        params = config.get("params", {})
+        response = method(**params)
+    except Exception as e:
+        return f"AWS API error for {service_type}: {str(e)}"
+
+    # Extract resource list from response
+    response_key = config["response_key"]
+    items = response.get(response_key, [])
+
+    # Flatten nested structures (e.g., Reservations → Instances)
+    if config.get("flatten"):
+        flat = []
+        for item in items:
+            if isinstance(item, dict) and config["flatten"] in item:
+                flat.extend(item[config["flatten"]])
+        items = flat
+
+    service, rtype = service_type.split("/")
+    effective_region_str = region if effective_region else "global"
+
+    # Build and store each resource
+    points_batch = []
+    stored = 0
+    errors = 0
+
+    for item in items:
+        doc, arn, meta = _build_resource_doc(
+            item, service, rtype, effective_region_str, account, scan_id, config
+        )
+        if doc is None:
+            errors += 1
+            continue
+
+        try:
+            vector = embed_text(doc)
+            points_batch.append(
+                models.PointStruct(
+                    id=arn_to_id(arn),
+                    vector=vector,
+                    payload={"document": doc, "metadata": meta},
+                )
+            )
+            stored += 1
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to embed {arn}: {e}")
+
+    # Batch upsert
+    if points_batch:
+        BATCH_SIZE = 50
+        for i in range(0, len(points_batch), BATCH_SIZE):
+            batch = points_batch[i:i + BATCH_SIZE]
+            qdrant.upsert(collection_name=collection_name, points=batch)
+
+    return (
+        f"Discovered and stored {stored} {service_type} resources in {collection_name}. "
+        f"Region: {effective_region_str}. Scan: {scan_id}. Errors: {errors}. "
+        f"Each resource stored individually with ARN-based dedup."
+    )
 
 
 @server.tool()
@@ -244,57 +576,112 @@ def bulk_store_resources(
     """
     ensure_collection(collection_name)
 
-    # Parse the JSON — handle multiple formats from call_aws
+    # === PARSE THE JSON ===
+    # call_aws returns data in multiple possible formats:
+    #
+    # Format 1 (call_aws tool response wrapper):
+    #   {"result": [{"response": {"as_json": "{\"Result\": [{...}]}"}}]}
+    #
+    # Format 2 (AWS Result wrapper):
+    #   {"Result": [{...}, {...}]}
+    #
+    # Format 3 (AWS service wrapper):
+    #   {"Vpcs": [{...}]} or {"Buckets": [{...}]} etc.
+    #
+    # Format 4 (direct array):
+    #   [{...}, {...}]
+    #
+    # Format 5 (JSON embedded in text):
+    #   "Here are the results: [{...}]"
+
+    resources = None
+    parse_errors = []
+
+    # Step 1: Try to parse the input as JSON
+    raw = resources_json.strip()
+    parsed = None
     try:
-        resources = json.loads(resources_json)
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
-        # call_aws sometimes returns text with embedded JSON
-        # Try to find a JSON array or object in the text
-        for start_char in ("[", "{"):
-            idx = resources_json.find(start_char)
+        # Try to find JSON embedded in text
+        for start in ("{", "["):
+            idx = raw.find(start)
             if idx >= 0:
-                try:
-                    resources = json.loads(resources_json[idx:])
-                    break
-                except json.JSONDecodeError:
-                    continue
-        else:
-            return f"Error: Could not parse resources_json as JSON. Pass the raw JSON from call_aws."
-
-    # Unwrap response wrappers — call_aws often wraps in {"Result": [...]}
-    if isinstance(resources, dict):
-        # Check for call_aws Result wrapper
-        if "Result" in resources and isinstance(resources["Result"], list):
-            resources = resources["Result"]
-        elif "Result" in resources and isinstance(resources["Result"], dict):
-            resources = resources["Result"]
-            # Fall through to unwrap the inner dict
-
-        if isinstance(resources, dict):
-            # Try common AWS response keys
-            for key in ["Vpcs", "Reservations", "Instances", "Functions", "Buckets",
-                        "Roles", "SecurityGroups", "LoadBalancers", "Tables",
-                        "StackSummaries", "QueueUrls", "Topics", "HostedZones",
-                        "DistributionList", "MetricAlarms", "SecretList",
-                        "DBInstances", "clusterArns", "serviceArns",
-                        "Subnets", "RouteTables", "NatGateways", "InternetGateways"]:
-                if key in resources:
-                    resources = resources[key]
+                # Find the matching end
+                bracket_map = {"{": "}", "[": "]"}
+                end_char = bracket_map[start]
+                depth = 0
+                for i in range(idx, len(raw)):
+                    if raw[i] == start:
+                        depth += 1
+                    elif raw[i] == end_char:
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                parsed = json.loads(raw[idx:i+1])
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                if parsed is not None:
                     break
 
-    # Handle EC2 instances nested in Reservations
-    if isinstance(resources, list) and resources and isinstance(resources[0], dict):
-        if "Instances" in resources[0]:
+    if parsed is None:
+        return f"Error: Could not find valid JSON in the input ({len(raw)} chars). First 200: {raw[:200]}"
+
+    # Step 2: Unwrap call_aws tool response format
+    # {"result": [{"response": {"as_json": "..."}}]}
+    if isinstance(parsed, dict) and "result" in parsed and isinstance(parsed["result"], list):
+        for result_item in parsed["result"]:
+            if isinstance(result_item, dict) and "response" in result_item:
+                as_json = result_item["response"].get("as_json")
+                if as_json and isinstance(as_json, str):
+                    try:
+                        parsed = json.loads(as_json)
+                        break
+                    except json.JSONDecodeError:
+                        parse_errors.append(f"Failed to parse as_json: {as_json[:100]}")
+
+    # Step 3: Unwrap {"Result": [...]} wrapper
+    if isinstance(parsed, dict) and "Result" in parsed:
+        parsed = parsed["Result"]
+
+    # Step 4: Unwrap AWS service-specific keys
+    AWS_LIST_KEYS = [
+        "Vpcs", "Reservations", "Instances", "Functions", "Buckets",
+        "Roles", "SecurityGroups", "LoadBalancers", "Tables",
+        "StackSummaries", "QueueUrls", "Topics", "HostedZones",
+        "DistributionList", "Distributions", "MetricAlarms", "SecretList",
+        "DBInstances", "DBClusters", "clusterArns", "serviceArns",
+        "Subnets", "RouteTables", "NatGateways", "InternetGateways",
+        "Addresses", "KeyPairs", "Images", "Snapshots", "Volumes",
+        "Parameters", "Secrets",
+    ]
+
+    if isinstance(parsed, dict):
+        for key in AWS_LIST_KEYS:
+            if key in parsed:
+                parsed = parsed[key]
+                break
+
+    # Step 5: Flatten EC2 Reservations → Instances
+    if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+        if "Instances" in parsed[0]:
             instances = []
-            for reservation in resources:
-                instances.extend(reservation.get("Instances", []))
-            resources = instances
+            for reservation in parsed:
+                if isinstance(reservation, dict) and "Instances" in reservation:
+                    instances.extend(reservation["Instances"])
+            parsed = instances
 
-    if not isinstance(resources, list):
-        resources = [resources]
+    # Step 6: Ensure we have a list
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    elif not isinstance(parsed, list):
+        return f"Error: Parsed data is {type(parsed).__name__}, expected list or dict. First 200: {str(parsed)[:200]}"
+
+    resources = [r for r in parsed if isinstance(r, dict)]
 
     if not resources:
-        return f"No resources found in the provided data."
+        return f"No resource objects found after parsing. Parse errors: {parse_errors}"
 
     # Store each resource
     stored = 0
