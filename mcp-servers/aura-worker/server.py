@@ -39,16 +39,66 @@ from mcp.server.fastmcp import FastMCP
 
 # Configuration
 AURA_WORKER_URL = os.getenv("AURA_WORKER_URL", "http://localhost:8080")
-WORKER_TIMEOUT = int(os.getenv("WORKER_TIMEOUT", "180"))
+WORKER_TIMEOUT = int(os.getenv("WORKER_TIMEOUT", "300"))
 MAX_PARALLEL = int(os.getenv("MAX_PARALLEL", "10"))
 # Maximum characters to return from a worker response.
 # Workers store full data in Qdrant — the orchestrator only needs a summary.
 MAX_RESPONSE_LENGTH = int(os.getenv("MAX_RESPONSE_LENGTH", "1500"))
 
+# Throttling: controls how many workers hit Bedrock simultaneously.
+# Bedrock has per-model rate limits (tokens/min). Too many concurrent
+# requests causes "Too many tokens" errors.
+MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "3"))
+DELAY_BETWEEN_WORKERS = float(os.getenv("DELAY_BETWEEN_WORKERS", "2.0"))
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "10.0"))
+
+# Semaphore to limit concurrent Bedrock requests
+_semaphore = None
+
 server = FastMCP("aura-worker-mcp")
 
 
-async def _call_worker(prompt: str, worker_url: str, timeout: int) -> dict:
+def _get_semaphore():
+    global _semaphore
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    return _semaphore
+
+
+async def _call_worker_with_retry(prompt: str, worker_url: str, timeout: int) -> dict:
+    """Send a prompt with concurrency control and retry on rate limits."""
+    semaphore = _get_semaphore()
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        async with semaphore:
+            try:
+                result = await _call_worker_raw(prompt, worker_url, timeout)
+
+                # Check if the response indicates a rate limit error
+                content = result.get("content", "")
+                if "Too many tokens" in content or "please wait" in content.lower():
+                    if attempt < MAX_RETRIES:
+                        delay = RETRY_BASE_DELAY * attempt
+                        result["content"] = f"[Rate limited, retry {attempt}/{MAX_RETRIES} after {delay}s...]"
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        result["content"] += " [Max retries reached]"
+
+                return result
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < MAX_RETRIES:
+                    delay = RETRY_BASE_DELAY * attempt
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+
+    return {"content": "All retries exhausted", "tokens": 0, "elapsed_seconds": 0}
+
+
+async def _call_worker_raw(prompt: str, worker_url: str, timeout: int) -> dict:
     """Send a prompt to a worker aura instance and return the result."""
     start = time.time()
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -105,7 +155,7 @@ async def run_agent(
     """
     url = worker_url or AURA_WORKER_URL
     try:
-        result = await _call_worker(prompt, url, WORKER_TIMEOUT)
+        result = await _call_worker_with_retry(prompt, url, WORKER_TIMEOUT)
         return (
             f"Worker completed in {result['elapsed_seconds']}s "
             f"({result['tokens']} tokens):\n\n{result['content']}"
@@ -147,8 +197,15 @@ async def run_agents_parallel(
 
     start = time.time()
 
-    # Run all tasks in parallel
-    tasks = [_call_worker(prompt, url, WORKER_TIMEOUT) for prompt in prompts]
+    # Stagger task starts to avoid Bedrock rate limit spikes.
+    # The semaphore limits concurrent requests, and the stagger delay
+    # spreads out the initial burst.
+    async def _staggered_call(index: int, prompt: str):
+        if index > 0:
+            await asyncio.sleep(index * DELAY_BETWEEN_WORKERS)
+        return await _call_worker_with_retry(prompt, url, WORKER_TIMEOUT)
+
+    tasks = [_staggered_call(i, prompt) for i, prompt in enumerate(prompts)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     elapsed = round(time.time() - start, 1)
