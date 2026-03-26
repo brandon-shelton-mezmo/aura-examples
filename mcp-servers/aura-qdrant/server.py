@@ -1021,6 +1021,49 @@ def search(
 
 
 @server.tool()
+def get_resource(
+    arn: str,
+    collection_name: str = "aws_resources",
+) -> str:
+    """Get the FULL details of a single resource by ARN — no truncation.
+
+    Use this after search to get complete configuration details for a specific
+    resource. Returns the entire stored document including all configuration,
+    networking, tags, and relationships.
+
+    Args:
+        arn: The AWS ARN of the resource to retrieve.
+        collection_name: The Qdrant collection (default: aws_resources).
+    """
+    point_id = arn_to_id(arn)
+    try:
+        results = qdrant.retrieve(
+            collection_name=collection_name,
+            ids=[point_id],
+            with_payload=True,
+        )
+    except Exception as e:
+        return f"Error retrieving resource: {e}"
+
+    if not results:
+        return f"Resource not found: {arn}"
+
+    point = results[0]
+    doc = point.payload.get("document", "")
+    meta = point.payload.get("metadata", {})
+
+    return (
+        f"=== Full Resource Details ===\n"
+        f"ARN: {meta.get('arn', arn)}\n"
+        f"Service: {meta.get('service', 'N/A')}/{meta.get('resource_type', 'N/A')}\n"
+        f"Region: {meta.get('region', 'N/A')}\n"
+        f"Scan: {meta.get('scan_id', 'N/A')}\n"
+        f"Stored: {meta.get('stored_at', 'N/A')}\n\n"
+        f"{doc}"
+    )
+
+
+@server.tool()
 def delete_resource(
     arn: str,
     collection_name: str,
