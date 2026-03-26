@@ -635,6 +635,174 @@ def store_document(
 
 
 @server.tool()
+def index_terraform(
+    s3_bucket: str = "",
+    s3_prefix: str = "terraform/",
+    local_path: str = "",
+    collection_name: str = "aws_iac",
+    scan_id: str = "",
+) -> str:
+    """Index Terraform IaC files into a dedicated knowledge base collection.
+
+    Reads .tf files from S3 or local path, parses each resource/data/module block,
+    and stores them as searchable documents in a SEPARATE collection from live AWS
+    resources. This lets agents understand not just what's running (aws_resources)
+    but how it's DEFINED in code (aws_iac).
+
+    Agents can then answer: "What does the Terraform say about the security groups?",
+    "Does the running config match the IaC?", "What resources are defined but not deployed?"
+
+    Collections:
+        aws_resources — live AWS infrastructure (from discover_and_store)
+        aws_iac — Terraform/IaC definitions (from this tool)
+
+    Args:
+        s3_bucket: S3 bucket containing Terraform files (e.g., 'aura-demo-bundle').
+        s3_prefix: S3 key prefix for .tf files (default: 'terraform/').
+        local_path: Local directory path (alternative to S3). Used if s3_bucket is empty.
+        collection_name: Qdrant collection (default: 'aws_iac'). Keep separate from aws_resources.
+        scan_id: Optional scan ID to associate with indexed files.
+    """
+    import re
+    import boto3
+
+    ensure_collection(collection_name)
+
+    tf_files = {}
+
+    if s3_bucket:
+        # Read from S3
+        s3 = boto3.client("s3")
+        try:
+            response = s3.list_objects_v2(Bucket=s3_bucket, Prefix=s3_prefix)
+            for obj in response.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith(".tf"):
+                    body = s3.get_object(Bucket=s3_bucket, Key=key)["Body"].read().decode("utf-8")
+                    filename = key.split("/")[-1]
+                    tf_files[filename] = body
+        except Exception as e:
+            return f"Error reading from S3: {e}"
+    elif local_path:
+        # Read from local filesystem
+        import glob
+        for filepath in glob.glob(f"{local_path}/*.tf"):
+            filename = filepath.split("/")[-1]
+            with open(filepath) as f:
+                tf_files[filename] = f.read()
+    else:
+        return "Error: provide either s3_bucket or local_path"
+
+    if not tf_files:
+        return "No .tf files found"
+
+    # Parse and store each file + individual resource blocks
+    points_batch = []
+    stored_files = 0
+    stored_blocks = 0
+
+    for filename, content in tf_files.items():
+        # Store the full file as a document
+        file_doc = (
+            f"[TERRAFORM FILE] {filename}\n"
+            f"Type: Infrastructure as Code (Terraform HCL)\n"
+            f"Purpose: Defines AWS infrastructure for the bella-vista environment\n\n"
+            f"```hcl\n{content}\n```"
+        )
+        file_meta = {
+            "service": "terraform",
+            "resource_type": "file",
+            "arn": f"terraform:///{filename}",
+            "region": "iac",
+            "pillar": "infrastructure_as_code",
+            "scan_id": scan_id or "iac-index",
+            "stored_at": datetime.now(timezone.utc).isoformat(),
+        }
+        file_id = content_to_id(f"tf-file:{filename}")
+        try:
+            vector = embed_text(file_doc)
+            points_batch.append(
+                models.PointStruct(
+                    id=file_id, vector=vector,
+                    payload={"document": file_doc, "metadata": file_meta},
+                )
+            )
+            stored_files += 1
+        except Exception as e:
+            logger.error(f"Failed to embed {filename}: {e}")
+
+        # Also extract and store individual resource blocks
+        # Match: resource "type" "name" { ... }
+        block_pattern = re.compile(
+            r'(resource|data|module)\s+"([^"]+)"\s+"([^"]+)"\s*\{',
+            re.MULTILINE
+        )
+        for match in block_pattern.finditer(content):
+            block_type = match.group(1)  # resource, data, module
+            tf_type = match.group(2)     # e.g., aws_ecs_service
+            tf_name = match.group(3)     # e.g., bella_vista
+
+            # Extract the block content (find matching closing brace)
+            start = match.start()
+            brace_count = 0
+            end = start
+            for i, ch in enumerate(content[start:], start=start):
+                if ch == '{':
+                    brace_count += 1
+                elif ch == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        break
+            block_content = content[start:end]
+
+            block_doc = (
+                f"[TERRAFORM {block_type.upper()}] {tf_type}.{tf_name}\n"
+                f"File: {filename}\n"
+                f"Type: {block_type} block — {tf_type}\n"
+                f"Name: {tf_name}\n\n"
+                f"```hcl\n{block_content}\n```"
+            )
+            block_meta = {
+                "service": "terraform",
+                "resource_type": block_type,
+                "arn": f"terraform:///{filename}/{block_type}.{tf_type}.{tf_name}",
+                "region": "iac",
+                "pillar": "infrastructure_as_code",
+                "tf_type": tf_type,
+                "tf_name": tf_name,
+                "tf_file": filename,
+                "scan_id": scan_id or "iac-index",
+                "stored_at": datetime.now(timezone.utc).isoformat(),
+            }
+            block_id = content_to_id(f"tf-block:{filename}:{block_type}.{tf_type}.{tf_name}")
+            try:
+                vector = embed_text(block_doc)
+                points_batch.append(
+                    models.PointStruct(
+                        id=block_id, vector=vector,
+                        payload={"document": block_doc, "metadata": block_meta},
+                    )
+                )
+                stored_blocks += 1
+            except Exception as e:
+                logger.error(f"Failed to embed {tf_type}.{tf_name}: {e}")
+
+    # Batch upsert
+    if points_batch:
+        BATCH_SIZE = 50
+        for i in range(0, len(points_batch), BATCH_SIZE):
+            batch = points_batch[i:i + BATCH_SIZE]
+            qdrant.upsert(collection_name=collection_name, points=batch)
+
+    return (
+        f"Indexed {stored_files} Terraform files and {stored_blocks} resource blocks "
+        f"into {collection_name}. Agents can now search for IaC definitions alongside "
+        f"live AWS resources."
+    )
+
+
+@server.tool()
 def bulk_store_resources(
     resources_json: str,
     service: str,
