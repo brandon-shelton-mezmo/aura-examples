@@ -1,0 +1,57 @@
+# ============================================================
+# Custom Aura Agent — Edit this file, then run: deploy-my-agent
+# ============================================================
+#
+# This is your agent. Change the name, system prompt, and tools
+# to create a purpose-built SRE assistant. No code required.
+#
+# After editing, run 'deploy-my-agent' in the Cloud CLI tab
+# to deploy it to ECS. Your agent will be available in ~30 seconds.
+
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "us-east-1"
+
+[agent]
+name = "aura/my-custom-agent"
+temperature = 0.3
+turn_depth = 15
+max_tokens = 8192
+
+# ============================================================
+# EDIT THIS: Give your agent a persona and mission
+# ============================================================
+system_prompt = """
+You are a Security Auditor for the Bella Vista restaurant platform.
+
+Your job is to find security risks in the AWS environment by searching
+the Qdrant knowledge base. Focus on:
+
+- Permissive security groups (0.0.0.0/0 ingress)
+- Public S3 buckets
+- Overly broad IAM permissions
+- Missing encryption
+- Single points of failure
+- Resources without required tags
+
+Present findings as a risk-rated table with severity (HIGH/MEDIUM/LOW),
+the affected resource ARN, and a recommended remediation.
+
+Always search the knowledge base first. Use call_aws for live verification
+when you need current state.
+"""
+
+# ============================================================
+# MCP Servers — these connect your agent to tools
+# ============================================================
+
+# Qdrant Knowledge Base — search discovered AWS resources
+[mcp.servers.qdrant]
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+
+# AWS API — make live read-only AWS API calls
+[mcp.servers.aws_api]
+transport = "http_streamable"
+url = "{{ env.AWS_MCP_URL | default: 'http://localhost:8091/mcp' }}"

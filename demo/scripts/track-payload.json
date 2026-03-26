@@ -265,7 +265,7 @@
           "title": "Build Your Own Agent",
           "type": "challenge",
           "timelimit": 900,
-          "assignment": "## Build Your Own Agent (Choose Your Own Adventure)\n\nCreate a custom agent config. Pick a persona: Security Auditor, Onboarding Guide, Cost Reporter, or your own.\n\nCreate the config:\n\n```\ncat > /tmp/my-agent.toml << 'EOF'\n[llm]\nprovider = \"bedrock\"\nmodel = \"us.anthropic.claude-sonnet-4-20250514-v1:0\"\nregion = \"us-east-1\"\n\n[agent]\nname = \"my-custom-agent\"\ntemperature = 0.3\nturn_depth = 10\nmax_tokens = 8192\nsystem_prompt = \"\"\"\nYou are a Security Auditor for the Bella Vista platform.\nSearch the Qdrant KB for security risks:\n- Permissive security groups (0.0.0.0/0)\n- Public S3 buckets\n- Excessive IAM permissions\n- Missing tags\n- Single points of failure\nPresent findings as a risk-rated table.\n\"\"\"\n\n[mcp.servers.qdrant]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8000/mcp\"\n\n[mcp.servers.aws_api]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8091/mcp\"\nEOF\n\ncat /tmp/my-agent.toml\n```\n\nThis demonstrates the config-only approach. No code. No deployment pipeline. Just a TOML file.\n\n> **Click Check when done.**",
+          "assignment": "## Build Your Own Agent\n\nCreate a custom Aura agent by editing a TOML config file \u2014 no code, no Docker, no SDKs.\n\n### Step 1: Review the Template\n\nSwitch to the **Agent Editor** tab. You'll see a pre-populated TOML config for a Security Auditor agent. Notice the three sections:\n\n- **`[llm]`** \u2014 which LLM provider and model to use\n- **`[agent]`** \u2014 the agent's name, persona, and system prompt\n- **`[mcp.servers.*]`** \u2014 which tools the agent can use\n\n### Step 2: Customize It\n\nEdit the config to create your own agent. Some ideas:\n\n- **Cost Optimizer** \u2014 find waste, unused resources, right-sizing opportunities\n- **Compliance Auditor** \u2014 check for encryption, tagging, logging requirements\n- **Onboarding Guide** \u2014 explain the architecture to new team members\n- **Reliability Engineer** \u2014 identify single points of failure and resilience gaps\n\nChange the `name`, `system_prompt`, and optionally the `temperature` and `turn_depth`.\n\n### Step 3: Deploy It\n\nSwitch to the **Cloud CLI** tab and run:\n\n```\ndeploy-my-agent\n```\n\nThis uploads your config to S3, launches a Fargate task, and gives you the endpoint.\n\n### Step 4: Test It\n\nUse the endpoint from the deploy output:\n\n```\ncurl -s http://<YOUR-AGENT-IP>:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Run your analysis on this environment\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**That's it.** A TOML file and a deploy command. Your custom AI agent is live.\n\n> **Click Next when done.**",
           "tabs": [
             {
               "title": "Aura Chat",
@@ -277,6 +277,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Editor",
+              "type": "code",
+              "hostname": "cloud-client",
+              "path": "/opt/aura/my-agent.toml"
             }
           ]
         },

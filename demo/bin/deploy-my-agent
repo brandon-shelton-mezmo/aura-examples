@@ -1,0 +1,119 @@
+#!/bin/sh
+# deploy-my-agent — Deploy your custom Aura agent to ECS
+#
+# Usage: deploy-my-agent [path-to-toml]
+# Default: /opt/aura/my-agent.toml
+
+set -e
+export AWS_PAGER=""
+
+TOML="${1:-/opt/aura/my-agent.toml}"
+
+if [ ! -f "$TOML" ]; then
+  echo "Error: Config file not found: $TOML"
+  echo "Edit your agent config in the 'Agent Editor' tab first."
+  exit 1
+fi
+
+echo "=== Deploying Custom Aura Agent ==="
+echo "Config: $TOML"
+echo ""
+
+# Validate TOML syntax
+python3 -c "
+import tomllib, sys
+try:
+    with open('$TOML', 'rb') as f:
+        config = tomllib.load(f)
+    name = config.get('agent', {}).get('name', 'unnamed')
+    print(f'Agent name: {name}')
+    print(f'Provider: {config.get(\"llm\", {}).get(\"provider\", \"unknown\")}')
+    print(f'Model: {config.get(\"llm\", {}).get(\"model\", \"unknown\")}')
+    mcp = config.get('mcp', {}).get('servers', {})
+    print(f'MCP servers: {list(mcp.keys())}')
+except Exception as e:
+    print(f'TOML parse error: {e}')
+    sys.exit(1)
+" || exit 1
+
+echo ""
+
+# Get S3 bucket and ALB from Terraform outputs
+S3_BUCKET=$(cat /etc/profile.d/aura-demo.sh 2>/dev/null | grep S3_BUCKET | head -1 | cut -d= -f2)
+ALB_DNS=$(cat /etc/profile.d/aura-demo.sh 2>/dev/null | grep ALB_DNS | head -1 | cut -d= -f2)
+
+if [ -z "$S3_BUCKET" ] || [ -z "$ALB_DNS" ]; then
+  echo "Error: Could not find S3_BUCKET or ALB_DNS. Is the environment set up?"
+  exit 1
+fi
+
+# Upload config to S3
+echo "[1/3] Uploading config to S3..."
+aws s3 cp "$TOML" "s3://${S3_BUCKET}/configs/custom-agent.toml" --region us-east-1
+echo "  Uploaded to s3://${S3_BUCKET}/configs/custom-agent.toml"
+
+# Get cluster and task definition info
+CLUSTER="bella-vista"
+TASK_DEF=$(aws ecs describe-task-definition --task-definition bella-vista-orchestrator --region us-east-1 --query 'taskDefinition.taskDefinitionArn' --output text 2>/dev/null)
+SUBNETS=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=*public*" --region us-east-1 --query 'Subnets[*].SubnetId' --output text 2>/dev/null | tr '\t' ',')
+SG=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=bella-vista-ecs-sg" --region us-east-1 --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
+
+echo ""
+echo "[2/3] Starting ECS task..."
+
+# Run a one-off ECS task using the orchestrator task def but with custom config
+TASK_ARN=$(aws ecs run-task \
+  --cluster "$CLUSTER" \
+  --task-definition "$TASK_DEF" \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=ENABLED}" \
+  --overrides "{
+    \"containerOverrides\": [{
+      \"name\": \"orchestrator\",
+      \"command\": [\"curl -sf https://${S3_BUCKET}.s3.amazonaws.com/configs/custom-agent.toml -o /app/config.toml && echo 'Waiting for sidecars...' && sleep 10 && /app/aura-web-server\"]
+    }]
+  }" \
+  --region us-east-1 \
+  --query 'tasks[0].taskArn' \
+  --output text 2>&1)
+
+if echo "$TASK_ARN" | grep -q "arn:aws:ecs"; then
+  echo "  Task started: $TASK_ARN"
+else
+  echo "  Error starting task: $TASK_ARN"
+  exit 1
+fi
+
+echo ""
+echo "[3/3] Waiting for task to get an IP..."
+
+# Wait for the task to get a public IP
+for i in $(seq 1 12); do
+  IP=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" --region us-east-1 \
+    --query 'tasks[0].attachments[0].details[?name==`publicIPv4Address`].value' --output text 2>/dev/null)
+  if [ -n "$IP" ] && [ "$IP" != "None" ]; then
+    break
+  fi
+  echo "  Waiting... ($i/12)"
+  sleep 5
+done
+
+if [ -z "$IP" ] || [ "$IP" = "None" ]; then
+  echo "  Could not get public IP. Task may still be starting."
+  echo "  Check: aws ecs describe-tasks --cluster $CLUSTER --tasks $TASK_ARN --region us-east-1"
+  exit 1
+fi
+
+echo ""
+echo "=== Your Custom Agent is Deployed! ==="
+echo ""
+echo "  Endpoint: http://${IP}:3030"
+echo "  Health:   curl http://${IP}:3030/health"
+echo "  Models:   curl http://${IP}:3030/v1/models"
+echo ""
+echo "Test it:"
+echo "  curl -s http://${IP}:3030/v1/chat/completions \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"messages\":[{\"role\":\"user\",\"content\":\"What security risks exist?\"}]}' | jq -r '.choices[0].message.content'"
+echo ""
+echo "To stop: aws ecs stop-task --cluster $CLUSTER --task $TASK_ARN --region us-east-1"
