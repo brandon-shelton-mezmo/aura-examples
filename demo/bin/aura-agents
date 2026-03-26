@@ -1,0 +1,13 @@
+#!/bin/bash
+ALB=${ALB_DNS:-localhost}
+echo "=== Aura Agent Endpoints ==="
+echo "  Orchestrator (discovery + KB): http://${ALB}:3030"
+echo "  Incident Response:             http://${ALB}:3031"
+echo "  Change Audit:                  http://${ALB}:3032"
+echo "  Post-Mortem:                   http://${ALB}:3033"
+echo "  Capacity Planning:             http://${ALB}:3034"
+echo ""
+echo "  Bella Vista App:               http://${ALB}"
+echo ""
+echo "Usage: aura-ask <port> \"your question\""
+echo "Example: aura-ask 3031 \"Triage the Bella Vista 5xx alarm\""

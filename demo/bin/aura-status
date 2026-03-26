@@ -1,0 +1,24 @@
+#!/bin/bash
+ALB=${ALB_DNS:-localhost}
+echo "=== Aura Stack Status ==="
+for svc in orchestrator:3030 incident:3031 audit:3032 postmortem:3033 capacity:3034; do
+  name="${svc%%:*}"; port="${svc##*:}"
+  if curl -sf "http://${ALB}:${port}/health" > /dev/null 2>&1; then
+    echo "  [OK]   ${name} (:${port})"
+  else
+    echo "  [DOWN] ${name} (:${port})"
+  fi
+done
+echo ""
+echo "=== Bella Vista App ==="
+if curl -sf "http://${ALB}/" > /dev/null 2>&1; then
+  echo "  [OK]   bella-vista (:80)"
+else
+  echo "  [DOWN] bella-vista (:80)"
+fi
+echo ""
+echo "=== Knowledge Base ==="
+# Qdrant is internal only (Cloud Map), check via orchestrator
+echo "  (query via: aura-ask 3030 'How many resources are in the knowledge base?')"
+echo ""
+echo "  ALB: http://${ALB}"

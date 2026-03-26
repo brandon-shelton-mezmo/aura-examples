@@ -1,0 +1,59 @@
+# Legacy EC2 Instances — stopped but not terminated (INTENTIONAL cost waste)
+# These represent the "old monolith" that was replaced by the ECS migration.
+# Aura's capacity planning agent will flag these as MEDIUM severity.
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+# Legacy API server — stopped, tagged
+resource "aws_instance" "legacy_api" {
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.private_a.id
+
+  vpc_security_group_ids = [aws_security_group.legacy_ssh.id]
+
+  tags = {
+    Name        = "bella-vista-legacy-api"
+    environment = "legacy"
+    status      = "decommissioned"
+  }
+}
+
+# Stop the legacy API instance after creation
+resource "aws_ec2_instance_state" "legacy_api_stopped" {
+  instance_id = aws_instance.legacy_api.id
+  state       = "stopped"
+}
+
+# INTENTIONAL ISSUE: Legacy worker — stopped AND no Name tag
+resource "aws_instance" "legacy_worker" {
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.private_a.id
+
+  vpc_security_group_ids = [aws_security_group.legacy_ssh.id]
+
+  # Intentionally minimal tags — no Name tag
+  # Aura will flag this as an untagged resource
+  tags = {
+    environment = "legacy"
+  }
+}
+
+resource "aws_ec2_instance_state" "legacy_worker_stopped" {
+  instance_id = aws_instance.legacy_worker.id
+  state       = "stopped"
+}

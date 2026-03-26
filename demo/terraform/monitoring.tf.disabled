@@ -1,0 +1,107 @@
+# CloudWatch Alarms and CloudTrail
+
+# INTENTIONAL ISSUE: Alarm in ALARM state (for incident response demo)
+resource "aws_cloudwatch_metric_alarm" "checkout_5xx" {
+  alarm_name          = "bella-vista-5xx-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 10
+  alarm_description   = "Bella Vista checkout service returning high 5xx error rate"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = aws_lb_target_group.bella_vista.arn_suffix
+  }
+
+  tags = { Name = "bella-vista-5xx-high" }
+}
+
+resource "aws_cloudwatch_metric_alarm" "db_cpu" {
+  alarm_name          = "bella-vista-db-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "Bella Vista database CPU > 80%"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.main.identifier
+  }
+
+  tags = { Name = "bella-vista-db-cpu" }
+}
+
+resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
+  alarm_name          = "bella-vista-dlq-depth"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Bella Vista dead letter queue has messages — orders are failing"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.dlq.name
+  }
+
+  tags = { Name = "bella-vista-dlq-depth" }
+}
+
+# CloudTrail — feeds the change audit agent
+resource "aws_cloudtrail" "main" {
+  name                       = "bella-vista-trail"
+  s3_bucket_name             = aws_s3_bucket.cloudtrail.id
+  include_global_service_events = true
+  is_multi_region_trail      = false
+  enable_logging             = true
+
+  tags = { Name = "bella-vista-trail" }
+
+  depends_on = [aws_s3_bucket_policy.cloudtrail]
+}
+
+# S3 bucket for CloudTrail logs
+resource "aws_s3_bucket" "cloudtrail" {
+  bucket        = "bella-vista-cloudtrail-${local.suffix}"
+  force_destroy = true
+  tags          = { Name = "bella-vista-cloudtrail" }
+}
+
+resource "aws_s3_bucket_policy" "cloudtrail" {
+  bucket = aws_s3_bucket.cloudtrail.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AWSCloudTrailAclCheck"
+        Effect = "Allow"
+        Principal = { Service = "cloudtrail.amazonaws.com" }
+        Action   = "s3:GetBucketAcl"
+        Resource = aws_s3_bucket.cloudtrail.arn
+      },
+      {
+        Sid    = "AWSCloudTrailWrite"
+        Effect = "Allow"
+        Principal = { Service = "cloudtrail.amazonaws.com" }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${local.account_id}/*"
+        Condition = {
+          StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
+        }
+      }
+    ]
+  })
+}

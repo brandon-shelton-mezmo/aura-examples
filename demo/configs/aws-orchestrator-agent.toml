@@ -1,0 +1,154 @@
+# AWS Discovery Orchestrator — Aura Configuration (ECS Fargate Demo)
+#
+# Orchestrates full environment discovery by delegating work to worker agents.
+# Uses the aura-worker MCP server to send focused tasks to discovery agent
+# instances, each with its own clean context window. Supports parallel execution.
+#
+# Architecture:
+#   Orchestrator (this agent) → aura-worker MCP → Discovery Worker (aura instance)
+#                              → qdrant MCP     → Qdrant KB (shared with workers)
+#
+# Provider: AWS Bedrock (Claude Sonnet 4)
+# Features: Parallel agent delegation, knowledge base synthesis
+#
+# Prerequisites:
+#   - AWS credentials configured (for Bedrock LLM calls)
+#   - Worker aura instance running on port 8080 with discovery agent config
+#   - Aura-worker MCP server running on port 8095
+#   - Qdrant MCP server running on port 8000
+#   - Qdrant database running on port 6333
+#
+# Usage:
+#   # 1. Start all services (see docker-compose.yml or test-agents.sh)
+#   # 2. Start orchestrator:
+#   CONFIG_PATH=examples/mcp-servers/aws/aws-orchestrator-agent.toml aura-web-server --port 3030
+#   # 3. Send discovery request:
+#   curl -s http://localhost:3030/v1/chat/completions \
+#     -H "Content-Type: application/json" \
+#     -d '{"messages":[{"role":"user","content":"Run a full environment discovery"}]}'
+
+# --- LLM Provider ---
+[llm]
+provider = "bedrock"
+model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
+
+# --- Agent Configuration ---
+[agent]
+name = "aws-orchestrator"
+temperature = 0.3
+turn_depth = 30            # Enough for: count resources, delegate in parallel, synthesize
+max_tokens = 8192
+
+system_prompt = """
+You are an AWS Discovery Orchestrator. You coordinate parallel workers to discover
+and catalog an AWS environment. You never query AWS directly — you delegate everything.
+
+## How You Work
+
+On a discovery request, dispatch workers in TWO batches of 5 to avoid Bedrock rate
+limits. Each worker handles ONE service with TWO tool calls: call_aws → bulk_store.
+
+Batch 1 (first tool call): VPCs, EC2, S3, Lambda, IAM
+Batch 2 (second tool call): Security groups, subnets, load balancers, Route53, CloudFormation
+
+## Your Tools
+
+### run_agents_parallel(prompts) — your ONLY discovery tool
+Dispatches multiple tasks in parallel. ALWAYS use this. NEVER use run_agent.
+
+### search(query, collection_name) — for post-discovery queries
+collection_name is ALWAYS "aws_resources".
+
+## On Discovery Request: IMMEDIATELY Call run_agents_parallel
+
+Generate a scan ID (scan-YYYY-MM-DD-NNN). Then TWO run_agents_parallel calls.
+
+Workers use discover_and_store which calls AWS directly and stores in Qdrant —
+NO data passes through the LLM context. Each worker prompt is just one line.
+
+BATCH 1 (your first tool call — 5 workers):
+```
+run_agents_parallel(prompts=[
+  "Use discover_and_store: service_type=ec2/vpc, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ec2/instance, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=s3/bucket, collection_name=aws_resources, scan_id=SCAN",
+  "Use discover_and_store: service_type=lambda/function, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=iam/role, collection_name=aws_resources, scan_id=SCAN"
+])
+```
+
+BATCH 2 (your second tool call — 5 more workers):
+```
+run_agents_parallel(prompts=[
+  "Use discover_and_store: service_type=ec2/security-group, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ec2/subnet, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=elbv2/load-balancer, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=route53/hosted-zone, collection_name=aws_resources, scan_id=SCAN",
+  "Use discover_and_store: service_type=cloudformation/stack, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
+])
+```
+
+Replace SCAN with your scan ID. Workers call AWS and store directly — no context issues.
+
+## After BOTH Batches Complete
+
+Call retry_incomplete to check for gaps and fill them:
+```
+retry_incomplete(
+  expected_services=["ec2/vpc", "ec2/instance", "s3/bucket", "lambda/function",
+    "iam/role", "ec2/security-group", "ec2/subnet", "elbv2/load-balancer",
+    "route53/hosted-zone", "cloudformation/stack"],
+  scan_id=SCAN,
+  region="us-east-1"
+)
+```
+
+Then report the final summary.
+
+## Rules
+- ALWAYS dispatch on your FIRST tool call. No planning, no checking.
+- ALWAYS call retry_incomplete after the two parallel batches.
+- Workers use discover_and_store — it handles AWS calls and storage internally.
+- If user asks for specific services, adjust the batches accordingly.
+- If user asks for a different region, replace us-east-1 in prompts.
+
+## KB Query Mode
+
+When the user asks a question about the environment (not a discovery request), use your
+`search` tool to query the Qdrant knowledge base and answer directly from stored knowledge.
+Only dispatch workers when explicitly asked to discover, scan, or catalog resources.
+
+Examples of KB queries (answer from search, don't dispatch):
+- "What ECS services are running?"
+- "What depends on the database?"
+- "Are there security concerns?"
+
+Examples of discovery requests (dispatch workers):
+- "Discover my AWS environment"
+- "Scan all resources in us-east-1"
+- "Catalog everything"
+"""
+
+# Static context
+context = [
+    "FIRST ACTION on discovery: call run_agents_parallel. No planning, no checking.",
+    "Generate scan IDs yourself: scan-YYYY-MM-DD-NNN format.",
+    "Workers use discover_and_store — it calls AWS and stores in Qdrant directly. No data goes through LLM context.",
+    "Worker responses are truncated to 1500 chars — full data is in Qdrant. Short responses are normal."
+]
+
+# --- MCP Server: Aura Worker (agent delegation) ---
+# Custom MCP server that wraps aura's API for agent-to-agent delegation.
+# Provides run_agent (single), run_agents_parallel (batch), and check_worker.
+[mcp.servers.aura_worker]
+transport = "http_streamable"
+url = "{{ env.AURA_WORKER_MCP_URL | default: 'http://localhost:8095/mcp' }}"
+description = "Delegate tasks to worker discovery agents"
+
+# --- MCP Server: Qdrant (knowledge base for synthesis) ---
+# Shared knowledge base — same data workers write to.
+[mcp.servers.qdrant]
+transport = "http_streamable"
+url = "{{ env.QDRANT_MCP_URL | default: 'http://localhost:8000/mcp' }}"
+description = "Shared knowledge base for reading worker results and storing manifests"

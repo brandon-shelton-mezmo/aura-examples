@@ -1,0 +1,15 @@
+#!/bin/bash
+# Usage: bella-vista-fail <scenario> [duration_seconds]
+ALB=${ALB_DNS:-localhost}
+SCENARIO=${1:-connection_pool}
+DURATION=${2:-300}
+
+echo "Triggering failure: ${SCENARIO} for ${DURATION}s on Bella Vista..."
+curl -s -X POST "http://${ALB}/api/simulate/failure" \
+  -H "Content-Type: application/json" \
+  -d "{\"scenario\": \"${SCENARIO}\", \"duration\": ${DURATION}}" | jq .
+
+echo ""
+echo "Available scenarios: connection_pool, payment_gateway, memory_leak, cascading_failure, data_corruption"
+echo "Check status: curl -s http://${ALB}/api/simulate/status | jq ."
+echo "Stop failure: curl -s -X POST http://${ALB}/api/simulate/stop | jq ."

@@ -1,0 +1,11 @@
+#!/bin/bash
+# Usage: aura-ask <port> "your question"
+# Example: aura-ask 3030 "What ECS services are running?"
+PORT=${1:-3030}
+QUESTION="${2:-What can you tell me about this environment?}"
+ALB=${ALB_DNS:-localhost}
+PAYLOAD=$(jq -nc --arg q "$QUESTION" '{"messages":[{"role":"user","content":$q}]}')
+curl -s "http://${ALB}:${PORT}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" \
+  | jq -r '.choices[0].message.content'

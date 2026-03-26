@@ -1,0 +1,242 @@
+{
+  "query": "mutation($track: TrackInput!) { updateCompleteTrack(track: $track) { id slug challenges { id slug title } } }",
+  "variables": {
+    "track": {
+      "id": "pkiffeuefvwr",
+      "slug": "aura-sre-platform",
+      "title": "Aura SRE Platform \u2014 Intelligent Infrastructure Discovery",
+      "owner": "mezmo",
+      "description": "Deploy Aura into a live AWS environment running the Bella Vista restaurant app. Watch it discover infrastructure, build a knowledge base, and use 5 specialized AI agents to investigate, audit, and optimize.",
+      "teaser": "AI-powered SRE platform that discovers AWS infrastructure and builds a semantic knowledge base",
+      "level": "intermediate",
+      "private": true,
+      "timelimit": 5400,
+      "skipping_enabled": true,
+      "show_timer": false,
+      "config": {
+        "containers": [
+          {
+            "name": "cloud-client",
+            "image": "gcr.io/instruqt/cloud-client"
+          }
+        ],
+        "aws_accounts": [
+          {
+            "name": "bella-vista-aws",
+            "services": [
+              "ec2",
+              "ecs",
+              "rds",
+              "s3",
+              "lambda",
+              "sqs",
+              "sns",
+              "dynamodb",
+              "iam",
+              "cloudwatch",
+              "cloudtrail",
+              "elasticloadbalancing",
+              "route53",
+              "cloudformation",
+              "ecr",
+              "sts",
+              "kms",
+              "logs",
+              "elasticfilesystem",
+              "ebs",
+              "ssm",
+              "events"
+            ],
+            "regions": [
+              "us-east-1"
+            ],
+            "iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"sts:GetCallerIdentity\",\"ec2:Describe*\",\"ecs:Describe*\",\"ecs:List*\",\"rds:Describe*\",\"s3:List*\",\"s3:GetBucket*\",\"lambda:List*\",\"lambda:GetFunction*\",\"sqs:List*\",\"sqs:GetQueueAttributes\",\"sns:List*\",\"sns:GetTopicAttributes\",\"dynamodb:Describe*\",\"dynamodb:List*\",\"iam:List*\",\"iam:GetRole*\",\"iam:GetPolicy*\",\"cloudwatch:Describe*\",\"cloudwatch:List*\",\"cloudtrail:LookupEvents\",\"cloudformation:Describe*\",\"cloudformation:List*\",\"elasticloadbalancing:Describe*\",\"route53:List*\",\"ecr:Describe*\",\"ecr:List*\",\"efs:Describe*\",\"secretsmanager:ListSecrets\",\"secretsmanager:DescribeSecret\",\"servicequotas:List*\",\"servicequotas:Get*\",\"logs:Describe*\",\"logs:GetLogEvents\",\"bedrock:InvokeModel\",\"bedrock:InvokeModelWithResponseStream\"],\"Resource\":\"*\"}]}",
+            "admin_iam_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}",
+            "scp_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"DenyExpensiveServices\",\"Effect\":\"Deny\",\"Action\":[\"sagemaker:*\",\"redshift:*\",\"emr:*\",\"kafka:*\"],\"Resource\":\"*\"},{\"Sid\":\"LimitEC2Types\",\"Effect\":\"Deny\",\"Action\":[\"ec2:RunInstances\",\"ec2:ModifyInstanceAttribute\"],\"Resource\":\"arn:aws:ec2:*:*:instance/*\",\"Condition\":{\"ForAnyValue:StringNotEquals\":{\"ec2:InstanceType\":[\"t2.nano\",\"t2.micro\",\"t2.small\",\"t2.medium\",\"t3.nano\",\"t3.micro\",\"t3.small\",\"t3.medium\",\"t3.large\"]}}}]}",
+            "expose_to_user": true
+          }
+        ],
+        "secrets": [
+          {
+            "name": "BEDROCK_ACCESS_KEY_ID"
+          },
+          {
+            "name": "BEDROCK_SECRET_ACCESS_KEY"
+          }
+        ]
+      },
+      "challenges": [
+        {
+          "slug": "welcome-to-bella-vista",
+          "title": "Welcome to Bella Vista",
+          "type": "challenge",
+          "timelimit": 300,
+          "assignment": "## Welcome to Bella Vista\n\nYou just joined the platform team at **Bella Vista**, a growing restaurant chain running on AWS. Your manager says:\n\n> *Here's your AWS Console access. The app is running. You're on-call starting Monday. Good luck.*\n\n### Explore the Environment\n\nSwitch to the **AWS Console** tab. Try to answer:\n\n1. What services are running in ECS?\n2. What database backs the application?\n3. Are any CloudWatch alarms firing?\n4. How do orders flow through the system?\n\nNotice how long it takes to find answers by clicking through the console.\n\nIn the next challenge, you'll see how Aura answers all of these in minutes.\n\n> **Click Check when you're ready to continue.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "AWS Console",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 80
+            }
+          ]
+        },
+        {
+          "slug": "discover-everything",
+          "title": "Discover Everything",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Discover Everything\n\nAura is running on ECS in this environment. Let's trigger a full discovery.\n\nFirst, find the ALB and check the orchestrator:\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\necho \"ALB: $ALB_DNS\"\ncurl -s http://$ALB_DNS:3030/health\n```\n\nNow trigger discovery:\n\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Discover my AWS environment in us-east-1. Catalog everything.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nThis takes 2-3 minutes. The orchestrator dispatches parallel workers that call AWS APIs, parse resources, generate embeddings, and store in Qdrant.\n\n**No raw AWS data passes through any LLM context.**\n\n> **Click Check when discovery completes.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "AWS Console",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 80
+            }
+          ]
+        },
+        {
+          "slug": "query-knowledge-base",
+          "title": "Query Your Knowledge Base",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Query Your Knowledge Base\n\nThe KB is populated. Ask Aura about the environment.\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n```\n\n**What ECS services exist?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"What ECS services are running? List them with configurations.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**What depends on the database?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"What depends on the Bella Vista database? Trace the dependency chain.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Any security concerns?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Are there security concerns? Check for permissive security groups and public S3 buckets.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nTry your own questions!\n\n> **Click Check when done exploring.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "AWS Console",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 80
+            }
+          ]
+        },
+        {
+          "slug": "incident-response",
+          "title": "Incident Response",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Incident Response (Choose Your Own Adventure)\n\nA CloudWatch alarm is firing. Let's triage with the incident response agent (port 3031).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3031/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"The CloudWatch alarm bella-vista-5xx-high is firing. Triage: What is broken? What is the blast radius? What changed recently? What should we do?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Dig deeper:**\n```\ncurl -s http://$ALB_DNS:3031/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"If the Bella Vista database goes down completely, what is the full blast radius?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "change-audit",
+          "title": "Change Audit",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Change Audit (Choose Your Own Adventure)\n\nSomeone made a risky change. Let's find it using the change audit agent (port 3032).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3032/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Scan CloudTrail for recent infrastructure changes. Risk-rate each change and flag anything concerning.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Investigate the risky change:**\n```\ncurl -s http://$ALB_DNS:3032/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"The security group bella-vista-legacy-ssh-sg has SSH open to the world. What resources use it? What is the exposure?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "post-mortem",
+          "title": "Post-Mortem Construction",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Post-Mortem Construction (Choose Your Own Adventure)\n\nConstruct a blameless post-mortem using the post-mortem agent (port 3033).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3033/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Construct a blameless post-mortem for the Bella Vista checkout incident. The alarm bella-vista-5xx-high was firing. Reconstruct the timeline, identify contributing factors, assess blast radius, and recommend action items.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nLook for: blameless language, timeline, contributing factors, action items, blast radius.\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "capacity-planning",
+          "title": "Capacity Planning",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## Capacity Planning (Choose Your Own Adventure)\n\nFind waste and resilience gaps using the capacity planning agent (port 3034).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3034/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Run a full capacity planning review. Check for: underutilized resources, cost waste, resilience gaps, over-provisioned services, and quota limits.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nAura should find: single-AZ RDS, over-provisioned Lambda (3GB), stopped EC2 instances, untagged resources.\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "build-your-own-agent",
+          "title": "Build Your Own Agent",
+          "type": "challenge",
+          "timelimit": 900,
+          "assignment": "## Build Your Own Agent (Choose Your Own Adventure)\n\nCreate a custom agent config. Pick a persona: Security Auditor, Onboarding Guide, Cost Reporter, or your own.\n\nCreate the config:\n\n```\ncat > /tmp/my-agent.toml << 'EOF'\n[llm]\nprovider = \"bedrock\"\nmodel = \"us.anthropic.claude-sonnet-4-20250514-v1:0\"\nregion = \"us-east-1\"\n\n[agent]\nname = \"my-custom-agent\"\ntemperature = 0.3\nturn_depth = 10\nmax_tokens = 8192\nsystem_prompt = \"\"\"\nYou are a Security Auditor for the Bella Vista platform.\nSearch the Qdrant KB for security risks:\n- Permissive security groups (0.0.0.0/0)\n- Public S3 buckets\n- Excessive IAM permissions\n- Missing tags\n- Single points of failure\nPresent findings as a risk-rated table.\n\"\"\"\n\n[mcp.servers.qdrant]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8000/mcp\"\n\n[mcp.servers.aws_api]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8091/mcp\"\nEOF\n\ncat /tmp/my-agent.toml\n```\n\nThis demonstrates the config-only approach. No code. No deployment pipeline. Just a TOML file.\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "ai-generated-agent",
+          "title": "AI-Generated Agent",
+          "type": "challenge",
+          "timelimit": 600,
+          "assignment": "## AI-Generated Agent (Choose Your Own Adventure)\n\nAsk Aura to design a new agent based on what it discovered.\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate a complete Aura TOML config for a Bella Vista Reliability Agent that monitors the critical order flow path, knows the risks you found, and can answer health questions. Output ONLY the TOML file.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nThe generated config references actual resource names from the KB.\n\n**Try others:**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate an Aura TOML config for a Bella Vista Runbook Agent that serves as the on-call runbook. Output ONLY the TOML.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
+          "slug": "review-next-steps",
+          "title": "Review & Next Steps",
+          "type": "challenge",
+          "timelimit": 300,
+          "assignment": "## What You Accomplished\n\nIn under 30 minutes, Aura:\n\n- Discovered and cataloged every resource in the Bella Vista environment\n- Built a semantic knowledge base with cross-resource relationships\n- Answered natural language questions about unfamiliar infrastructure\n- Triaged incidents with blast radius analysis\n- Audited changes and found SSH open to the world\n- Constructed blameless post-mortems\n- Found single-AZ database, over-provisioned Lambda, and cost waste\n- Built custom agents from TOML configs\n- Used AI to generate purpose-built agents from discovered knowledge\n\n**This was real AWS infrastructure, not a mock.**\n\n### Deploy in Your Environment\n\nAll configs are open source in the aura-examples repo.\n\n> **Click Check to finish.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        }
+      ],
+      "scripts": [
+        {
+          "host": "cloud-client",
+          "action": "setup",
+          "contents": "IyEvYmluL2Jhc2gKc2V0IC11byBwaXBlZmFpbAoKTE9HPSIvdG1wL2F1cmEtc2V0dXAubG9nIgpleGVjID4gPih0ZWUgLWEgIiRMT0ciKSAyPiYxCgplY2hvICI9PT0gQXVyYSBEZW1vIFNldHVwICQoZGF0ZSkgPT09IgoKIyBJbnN0YWxsIEFXUyBDTEkgdjIKZWNobyAiWzEvNV0gSW5zdGFsbGluZyBBV1MgQ0xJIHYyLi4uIgpjdXJsIC1zICJodHRwczovL2F3c2NsaS5hbWF6b25hd3MuY29tL2F3c2NsaS1leGUtbGludXgteDg2XzY0LnppcCIgLW8gL3RtcC9hd3NjbGl2Mi56aXAKdW56aXAgLXEgL3RtcC9hd3NjbGl2Mi56aXAgLWQgL3RtcAovdG1wL2F3cy9pbnN0YWxsIC0tdXBkYXRlIDI+L2Rldi9udWxsIHx8IC90bXAvYXdzL2luc3RhbGwKcm0gLXJmIC90bXAvYXdzY2xpdjIuemlwIC90bXAvYXdzCmF3cyAtLXZlcnNpb24KCiMgSW5zdGFsbCBUZXJyYWZvcm0KZWNobyAiWzIvNV0gSW5zdGFsbGluZyBUZXJyYWZvcm0uLi4iCmN1cmwgLXNmICJodHRwczovL3JlbGVhc2VzLmhhc2hpY29ycC5jb20vdGVycmFmb3JtLzEuNy41L3RlcnJhZm9ybV8xLjcuNV9saW51eF9hbWQ2NC56aXAiIC1vIC90bXAvdGVycmFmb3JtLnppcAp1bnppcCAtcSAvdG1wL3RlcnJhZm9ybS56aXAgLWQgL3Vzci9sb2NhbC9iaW4vCnJtIC1mIC90bXAvdGVycmFmb3JtLnppcAp0ZXJyYWZvcm0gdmVyc2lvbgoKIyBJbnN0YWxsIGpxCndoaWNoIGpxIHx8IChhcHQtZ2V0IHVwZGF0ZSAtcXEgJiYgYXB0LWdldCBpbnN0YWxsIC15IC1xcSBqcSA+IC9kZXYvbnVsbCAyPiYxKQoKIyBEb3dubG9hZCBkZW1vIGJ1bmRsZSBmcm9tIG91ciBFQ1IgYWNjb3VudCdzIFMzCmVjaG8gIlszLzVdIERvd25sb2FkaW5nIGRlbW8gYnVuZGxlLi4uIgpjdXJsIC1zZiAiaHR0cHM6Ly9hdXJhLWRlbW8tYnVuZGxlLnMzLmFtYXpvbmF3cy5jb20vYXVyYS1kZW1vLWJ1bmRsZS50YXIuZ3oiIC1vIC90bXAvYXVyYS1kZW1vLWJ1bmRsZS50YXIuZ3oKbWtkaXIgLXAgL29wdC9hdXJhCnRhciB4emYgL3RtcC9hdXJhLWRlbW8tYnVuZGxlLnRhci5neiAtQyAvb3B0L2F1cmEKcm0gLWYgL3RtcC9hdXJhLWRlbW8tYnVuZGxlLnRhci5negoKIyBJbnN0YWxsIGhlbHBlciBzY3JpcHRzCmNobW9kICt4IC9vcHQvYXVyYS9iaW4vKiAyPi9kZXYvbnVsbCB8fCB0cnVlCmxuIC1zZiAvb3B0L2F1cmEvYmluLyogL3Vzci9sb2NhbC9iaW4vIDI+L2Rldi9udWxsIHx8IHRydWUKCiMgQ29uZmlndXJlIEFXUyBjcmVkZW50aWFscyAoYWRtaW4gY3JlZHMgZnJvbSBJbnN0cnVxdCkKZWNobyAiWzQvNV0gQ29uZmlndXJpbmcgY3JlZGVudGlhbHMuLi4iCgojIEluc3RydXF0IHByb3ZpZGVzIGFkbWluIGNyZWRlbnRpYWxzIHZpYSBlbnYgdmFycwojIFBhdHRlcm46IElOU1RSVVFUX0FXU19BQ0NPVU5UX3tOQU1FfV9BRE1JTl9BV1NfQUNDRVNTX0tFWV9JRApBRE1JTl9LRVk9IiR7SU5TVFJVUVRfQVdTX0FDQ09VTlRfQkVMTEFfVklTVEFfQVdTX0FETUlOX0FXU19BQ0NFU1NfS0VZX0lEOi19IgpBRE1JTl9TRUNSRVQ9IiR7SU5TVFJVUVRfQVdTX0FDQ09VTlRfQkVMTEFfVklTVEFfQVdTX0FETUlOX0FXU19TRUNSRVRfQUNDRVNTX0tFWTotfSIKCmlmIFsgLXogIiRBRE1JTl9LRVkiIF07IHRoZW4KICAjIFRyeSBhbHRlcm5hdGUgcGF0dGVybgogIEFETUlOX0tFWT0iJHtJTlNUUlVRVF9BV1NfQUNDT1VOVF9CRUxMQV9WSVNUQV9BV1NfQURNSU5fQUNDRVNTX0tFWV9JRDotfSIKICBBRE1JTl9TRUNSRVQ9IiR7SU5TVFJVUVRfQVdTX0FDQ09VTlRfQkVMTEFfVklTVEFfQVdTX0FETUlOX1NFQ1JFVF9BQ0NFU1NfS0VZOi19IgpmaQoKaWYgWyAtbiAiJEFETUlOX0tFWSIgXTsgdGhlbgogIGVjaG8gIlVzaW5nIEFETUlOIGNyZWRlbnRpYWxzIGZvciBUZXJyYWZvcm0iCiAgZXhwb3J0IEFXU19BQ0NFU1NfS0VZX0lEPSIkQURNSU5fS0VZIgogIGV4cG9ydCBBV1NfU0VDUkVUX0FDQ0VTU19LRVk9IiRBRE1JTl9TRUNSRVQiCmVsc2UKICBlY2hvICJXQVJOSU5HOiBObyBhZG1pbiBjcmVkZW50aWFscyBmb3VuZC4gVXNpbmcgZGVmYXVsdCBjcmVkZW50aWFscy4iCiAgZWNobyAiQXZhaWxhYmxlIElOU1RSVVFUIGVudiB2YXJzOiIKICBlbnYgfCBncmVwIElOU1RSVVFUX0FXUyB8IHNlZCAncy89LiovPSoqKi8nIHx8IGVjaG8gIihub25lIGZvdW5kKSIKZmkKCmV4cG9ydCBBV1NfREVGQVVMVF9SRUdJT049dXMtZWFzdC0xCmF3cyBjb25maWd1cmUgc2V0IHJlZ2lvbiB1cy1lYXN0LTEKCiMgVmVyaWZ5IGlkZW50aXR5CmVjaG8gIkN1cnJlbnQgaWRlbnRpdHk6Igphd3Mgc3RzIGdldC1jYWxsZXItaWRlbnRpdHkgMj4mMSB8fCBlY2hvICJzdHMgZmFpbGVkIgoKIyBHZXQgQmVkcm9jayBjcmVkZW50aWFscyBmcm9tIEluc3RydXF0IHRlYW0gc2VjcmV0cyAoY3Jvc3MtYWNjb3VudCB0byBNZXptbykKQkVEUk9DS19LRVk9IiR7QkVEUk9DS19BQ0NFU1NfS0VZX0lEOi19IgpCRURST0NLX1NFQ1JFVD0iJHtCRURST0NLX1NFQ1JFVF9BQ0NFU1NfS0VZOi19IgplY2hvICJCZWRyb2NrIGtleSBwcmVzZW50OiAkKFsgLW4gIiRCRURST0NLX0tFWSIgXSAmJiBlY2hvICd5ZXMnIHx8IGVjaG8gJ25vJykiCgojIFJ1biBUZXJyYWZvcm0KZWNobyAiWzUvNV0gUnVubmluZyBUZXJyYWZvcm0uLi4iCmNkIC9vcHQvYXVyYS90ZXJyYWZvcm0KdGVycmFmb3JtIGluaXQgLWlucHV0PWZhbHNlIDI+JjEKCiMgQnVpbGQgLXZhciBhcmdzIGZvciBCZWRyb2NrIGNyZWRzIGlmIHByZXNlbnQKQkVEUk9DS19WQVJTPSIiCmlmIFsgLW4gIiRCRURST0NLX0tFWSIgXTsgdGhlbgogIEJFRFJPQ0tfVkFSUz0iLXZhcj1iZWRyb2NrX2FjY2Vzc19rZXlfaWQ9JHtCRURST0NLX0tFWX0gLXZhcj1iZWRyb2NrX3NlY3JldF9hY2Nlc3Nfa2V5PSR7QkVEUk9DS19TRUNSRVR9IgpmaQoKZWNobyAiUnVubmluZyBUZXJyYWZvcm0gYXBwbHkuLi4iCnRlcnJhZm9ybSBhcHBseSAtYXV0by1hcHByb3ZlIC1pbnB1dD1mYWxzZSAkQkVEUk9DS19WQVJTIDI+JjEgfHwgewogIGVjaG8gIldBUk5JTkc6IFRlcnJhZm9ybSBhcHBseSBmYWlsZWQuIENoZWNrICRMT0cgZm9yIGRldGFpbHMuIgogIGVjaG8gIlJldHJ5aW5nIGluIDEwIHNlY29uZHMuLi4iCiAgc2xlZXAgMTAKICB0ZXJyYWZvcm0gYXBwbHkgLWF1dG8tYXBwcm92ZSAtaW5wdXQ9ZmFsc2UgJEJFRFJPQ0tfVkFSUyAyPiYxIHx8IHsKICAgIGVjaG8gIkVSUk9SOiBUZXJyYWZvcm0gYXBwbHkgZmFpbGVkIG9uIHJldHJ5LiBJbmZyYXN0cnVjdHVyZSBtYXkgYmUgaW5jb21wbGV0ZS4iCiAgfQp9CgojIEV4cG9ydCBBTEIgRE5TIGZvciB1c2VyIGNvbnZlbmllbmNlCkFMQl9ETlM9JCh0ZXJyYWZvcm0gb3V0cHV0IC1yYXcgYWxiX2Ruc19uYW1lIDI+L2Rldi9udWxsIHx8IGVjaG8gIm5vdC1yZWFkeSIpCmVjaG8gImV4cG9ydCBBTEJfRE5TPSR7QUxCX0ROU30iID4+IC9yb290Ly5iYXNocmMKZWNobyAiZXhwb3J0IEFMQl9ETlM9JHtBTEJfRE5TfSIgPiAvZXRjL3Byb2ZpbGUuZC9hdXJhLWRlbW8uc2gKY2htb2QgK3ggL2V0Yy9wcm9maWxlLmQvYXVyYS1kZW1vLnNoIDI+L2Rldi9udWxsIHx8IHRydWUKCiMgV2FpdCBmb3IgRUNTIHNlcnZpY2VzIHRvIHN0YWJpbGl6ZSAob3JjaGVzdHJhdG9yIGhlYWx0aCBjaGVjaykKZWNobyAiIgplY2hvICJXYWl0aW5nIGZvciBBdXJhIHNlcnZpY2VzIHRvIHN0YXJ0Li4uIgpmb3IgaSBpbiAkKHNlcSAxIDMwKTsgZG8KICBpZiBjdXJsIC1zZiAiaHR0cDovLyR7QUxCX0ROU306MzAzMC9oZWFsdGgiID4gL2Rldi9udWxsIDI+JjE7IHRoZW4KICAgIGVjaG8gIk9yY2hlc3RyYXRvciBpcyBoZWFsdGh5ISIKICAgIGJyZWFrCiAgZmkKICBlY2hvICIgIFdhaXRpbmcgZm9yIG9yY2hlc3RyYXRvci4uLiAoJGkvMzApIgogIHNsZWVwIDEwCmRvbmUKCmVjaG8gIiIKZWNobyAiPT09IFNldHVwIENvbXBsZXRlID09PSIKZWNobyAiQUxCOiBodHRwOi8vJHtBTEJfRE5TfSIKZWNobyAiT3JjaGVzdHJhdG9yOiBodHRwOi8vJHtBTEJfRE5TfTozMDMwIgplY2hvICJTZXR1cCBsb2c6ICRMT0ciCg=="
+        },
+        {
+          "host": "cloud-client",
+          "action": "cleanup",
+          "contents": "IyEvYmluL2Jhc2gKY2QgL29wdC9hdXJhL3RlcnJhZm9ybSAyPi9kZXYvbnVsbCAmJiB0ZXJyYWZvcm0gZGVzdHJveSAtYXV0by1hcHByb3ZlIC1pbnB1dD1mYWxzZSAyPiYxIHwgdGFpbCAtNSB8fCB0cnVlCg=="
+        }
+      ]
+    }
+  }
+}

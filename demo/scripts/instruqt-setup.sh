@@ -1,0 +1,128 @@
+#!/bin/bash
+# Aura Demo Setup — runs in Instruqt cloud-client container
+# Installs tools, downloads Terraform bundle, deploys ECS infrastructure
+
+LOG="/tmp/aura-setup.log"
+exec > >(tee -a "$LOG") 2>&1
+
+echo "=== Aura Demo Setup $(date) ==="
+
+# Install AWS CLI v2
+echo "[1/5] Installing AWS CLI v2..."
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update 2>/dev/null || /tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
+aws --version || true
+
+# Install Terraform
+echo "[2/5] Installing Terraform..."
+curl -sf "https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip" -o /tmp/terraform.zip
+unzip -q /tmp/terraform.zip -d /usr/local/bin/
+rm -f /tmp/terraform.zip
+terraform version || true
+
+# Install jq
+which jq > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq > /dev/null 2>&1) || true
+
+# Disable AWS CLI pager
+export AWS_PAGER=""
+
+# Download demo bundle
+echo "[3/5] Downloading demo bundle..."
+curl -sf "https://aura-demo-bundle.s3.amazonaws.com/aura-demo-bundle.tar.gz" -o /tmp/aura-demo-bundle.tar.gz
+mkdir -p /opt/aura
+tar xzf /tmp/aura-demo-bundle.tar.gz -C /opt/aura
+rm -f /tmp/aura-demo-bundle.tar.gz
+
+# Install helper scripts
+chmod +x /opt/aura/bin/* 2>/dev/null || true
+ln -sf /opt/aura/bin/* /usr/local/bin/ 2>/dev/null || true
+
+# Configure AWS credentials (admin creds from Instruqt)
+echo "[4/5] Configuring credentials..."
+
+ADMIN_KEY="${INSTRUQT_AWS_ACCOUNT_BELLA_VISTA_AWS_ADMIN_AWS_ACCESS_KEY_ID:-}"
+ADMIN_SECRET="${INSTRUQT_AWS_ACCOUNT_BELLA_VISTA_AWS_ADMIN_AWS_SECRET_ACCESS_KEY:-}"
+
+if [ -z "$ADMIN_KEY" ]; then
+  ADMIN_KEY="${INSTRUQT_AWS_ACCOUNT_BELLA_VISTA_AWS_ADMIN_ACCESS_KEY_ID:-}"
+  ADMIN_SECRET="${INSTRUQT_AWS_ACCOUNT_BELLA_VISTA_AWS_ADMIN_SECRET_ACCESS_KEY:-}"
+fi
+
+if [ -n "$ADMIN_KEY" ]; then
+  echo "Using ADMIN credentials for Terraform"
+  export AWS_ACCESS_KEY_ID="$ADMIN_KEY"
+  export AWS_SECRET_ACCESS_KEY="$ADMIN_SECRET"
+else
+  echo "WARNING: No admin credentials found."
+fi
+
+export AWS_DEFAULT_REGION=us-east-1
+aws configure set region us-east-1
+
+echo "Current identity:"
+aws sts get-caller-identity 2>&1 || true
+
+# Bedrock credentials — cross-account to Mezmo (627029844476)
+# These come from Instruqt team secrets (Settings > Secrets in the Instruqt UI).
+# If Instruqt team secrets aren't available, you can hardcode fallback creds here:
+#   BEDROCK_KEY="${BEDROCK_ACCESS_KEY_ID:-AKIA...}"
+#   BEDROCK_SECRET="${BEDROCK_SECRET_ACCESS_KEY:-...}"
+BEDROCK_KEY="${BEDROCK_ACCESS_KEY_ID:-}"
+BEDROCK_SECRET="${BEDROCK_SECRET_ACCESS_KEY:-}"
+echo "Bedrock key present: $([ -n "$BEDROCK_KEY" ] && echo 'yes' || echo 'no')"
+
+# Run Terraform
+echo "[5/5] Running Terraform..."
+cd /opt/aura/terraform
+terraform init -input=false 2>&1 || true
+
+# Write Bedrock creds to tfvars file (more reliable than -var args)
+if [ -n "$BEDROCK_KEY" ]; then
+  cat > /opt/aura/terraform/bedrock.auto.tfvars <<TFVARS
+bedrock_access_key_id     = "${BEDROCK_KEY}"
+bedrock_secret_access_key = "${BEDROCK_SECRET}"
+TFVARS
+  echo "Wrote bedrock.auto.tfvars"
+fi
+
+echo "Running Terraform apply..."
+terraform apply -auto-approve -input=false 2>&1 || {
+  echo "WARNING: Terraform apply failed. Retrying in 10 seconds..."
+  sleep 10
+  terraform apply -auto-approve -input=false 2>&1 || true
+}
+
+# Export ALB DNS
+ALB_DNS=$(terraform output -raw alb_dns_name 2>/dev/null || echo "not-ready")
+echo "export ALB_DNS=${ALB_DNS}" >> /root/.bashrc
+echo "export ALB_DNS=${ALB_DNS}" > /etc/profile.d/aura-demo.sh
+chmod +x /etc/profile.d/aura-demo.sh 2>/dev/null || true
+
+# Wait for orchestrator (best-effort, don't fail setup if it's slow)
+echo ""
+echo "Waiting for Aura services to start..."
+HEALTHY=false
+for i in $(seq 1 30); do
+  if curl -sf "http://${ALB_DNS}:3030/health" > /dev/null 2>&1; then
+    echo "Orchestrator is healthy!"
+    HEALTHY=true
+    break
+  fi
+  echo "  Waiting for orchestrator... ($i/30)"
+  sleep 10
+done
+
+if [ "$HEALTHY" = "false" ]; then
+  echo "WARNING: Orchestrator not yet healthy. Services may still be starting."
+fi
+
+echo ""
+echo "=== Setup Complete ==="
+echo "ALB: http://${ALB_DNS}"
+echo "Orchestrator: http://${ALB_DNS}:3030"
+echo "Setup log: $LOG"
+
+# Always exit 0 — infrastructure is deployed, services may still be starting
+exit 0

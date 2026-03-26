@@ -3,6 +3,19 @@
 .claude/plans/phase1-*
 .claude/plans/phase4-*
 .playwright-screenshots/
+.playwright-mcp/
+
+# Playwright/test screenshots
+*.png
+
+# Terraform state and local files
+demo/terraform/.terraform/
+demo/terraform/.terraform.lock.hcl
+demo/terraform/terraform.tfstate*
+demo/terraform/*.auto.tfvars
+
+# Test payloads
+demo/test-track-payload.json
 
 # Secrets — never commit API keys
 .env

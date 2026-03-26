@@ -1,0 +1,176 @@
+# docker-compose.yml — Aura Demo Stack (local development / testing)
+#
+# This is the LOCAL equivalent of the ECS Fargate deployment.
+# Use for testing configs and agent behavior before deploying to Instruqt.
+#
+# Usage:
+#   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-east-1
+#   export BEDROCK_AWS_ACCESS_KEY_ID=... BEDROCK_AWS_SECRET_ACCESS_KEY=...
+#   docker compose up -d
+#
+# For single-account mode (when cloud_ai_services is enabled):
+#   Just set AWS_ACCESS_KEY_ID/SECRET and don't set BEDROCK_ vars.
+#   The compose falls back to the main AWS creds for everything.
+
+# Infrastructure credentials — for MCP servers (AWS discovery)
+x-infra-creds: &infra-creds
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+
+# Bedrock credentials — for Aura agents (LLM calls)
+# Falls back to infra creds if BEDROCK_ vars not set (single-account mode)
+x-bedrock-creds: &bedrock-creds
+  AWS_ACCESS_KEY_ID: ${BEDROCK_AWS_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID}}
+  AWS_SECRET_ACCESS_KEY: ${BEDROCK_AWS_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY}}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+
+x-mcp-urls: &mcp-urls
+  AWS_MCP_URL: http://aws-mcp:8091/mcp
+  QDRANT_MCP_URL: http://qdrant-mcp:8000/mcp
+  AURA_WORKER_MCP_URL: http://aura-worker-mcp:8095/mcp
+
+x-aura-base: &aura-base
+  image: ${AURA_IMAGE:-mezmo/aura:latest}
+  environment:
+    <<: [*bedrock-creds, *mcp-urls]
+  depends_on:
+    aws-mcp:
+      condition: service_healthy
+    qdrant-mcp:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  # ======================== TIER 1: Data ========================
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ======================== TIER 2: MCP Servers ========================
+
+  aws-mcp:
+    build: ./docker/aws-api-mcp
+    ports:
+      - "8091:8091"
+    environment:
+      <<: *infra-creds
+      READ_OPERATIONS_ONLY: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8091/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  qdrant-mcp:
+    build:
+      context: ./docker/qdrant-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *infra-creds
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8000/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ======================== TIER 3: Workers ========================
+
+  discovery-worker:
+    <<: *aura-base
+    ports:
+      - "8080:3030"
+    volumes:
+      - ./configs/aws-discovery-agent.toml:/app/config.toml
+
+  aura-worker-mcp:
+    build: ./docker/worker-mcp
+    ports:
+      - "8095:8095"
+    environment:
+      AURA_WORKER_URL: http://discovery-worker:3030
+    depends_on:
+      - discovery-worker
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8095/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ======================== TIER 4: Agents ========================
+
+  orchestrator:
+    <<: *aura-base
+    ports:
+      - "3030:3030"
+    volumes:
+      - ./configs/aws-orchestrator-agent.toml:/app/config.toml
+    depends_on:
+      aws-mcp:
+        condition: service_healthy
+      qdrant-mcp:
+        condition: service_healthy
+      aura-worker-mcp:
+        condition: service_healthy
+
+  incident-response:
+    <<: *aura-base
+    ports:
+      - "3031:3030"
+    volumes:
+      - ./configs/aws-incident-response-agent.toml:/app/config.toml
+
+  change-audit:
+    <<: *aura-base
+    ports:
+      - "3032:3030"
+    volumes:
+      - ./configs/aws-change-audit-agent.toml:/app/config.toml
+
+  post-mortem:
+    <<: *aura-base
+    ports:
+      - "3033:3030"
+    volumes:
+      - ./configs/aws-postmortem-agent.toml:/app/config.toml
+
+  capacity-planning:
+    <<: *aura-base
+    ports:
+      - "3034:3030"
+    volumes:
+      - ./configs/aws-capacity-planning-agent.toml:/app/config.toml
+
+  # ======================== Bella Vista App ========================
+
+  bella-vista:
+    image: ${BELLA_VISTA_IMAGE:-627029844476.dkr.ecr.us-east-1.amazonaws.com/restaurant-app:latest}
+    ports:
+      - "8080:8080"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DISABLE_AUTO_TRAFFIC=false
+
+volumes:
+  qdrant_data:
