@@ -109,7 +109,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-orchestrator"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: orchestrator ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"orchestrator\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/discovery)",
@@ -137,7 +137,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-orchestrator"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: orchestrator ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"orchestrator\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/discovery)",
@@ -165,7 +165,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-incident-response"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: incident-response ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"incident-response\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/incident-response)",
@@ -193,7 +193,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-change-audit"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: change-audit ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"change-audit\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/change-audit)",
@@ -221,7 +221,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-post-mortem"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: post-mortem ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"post-mortem\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/post-mortem)",
@@ -249,7 +249,7 @@
               "title": "Live Logs",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": "tail-capacity-planning"
+              "cmd": "export AWS_PAGER=\"\" && echo \"=== Live logs: capacity-planning ===\" && aws logs tail /ecs/bella-vista --follow --format short --filter-pattern \"capacity-planning\" --region us-east-1"
             },
             {
               "title": "Agent Config (aura/capacity-planning)",
