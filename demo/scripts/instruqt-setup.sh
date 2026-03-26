@@ -94,11 +94,21 @@ terraform apply -auto-approve -input=false 2>&1 || {
   terraform apply -auto-approve -input=false 2>&1 || true
 }
 
-# Export ALB DNS
+# Export ALB DNS and config bucket
 ALB_DNS=$(terraform output -raw alb_dns_name 2>/dev/null || echo "not-ready")
+S3_BUCKET=$(terraform output -raw s3_config_bucket 2>/dev/null || echo "not-ready")
 echo "export ALB_DNS=${ALB_DNS}" >> /root/.bashrc
+echo "export S3_BUCKET=${S3_BUCKET}" >> /root/.bashrc
 echo "export ALB_DNS=${ALB_DNS}" > /etc/profile.d/aura-demo.sh
+echo "export S3_BUCKET=${S3_BUCKET}" >> /etc/profile.d/aura-demo.sh
 chmod +x /etc/profile.d/aura-demo.sh 2>/dev/null || true
+
+# Upload Terraform files to the sandbox S3 config bucket for IaC indexing
+echo "Uploading Terraform files to S3 for IaC indexing..."
+for f in /opt/aura/terraform/*.tf; do
+  aws s3 cp "$f" "s3://${S3_BUCKET}/terraform/$(basename $f)" --quiet 2>/dev/null || true
+done
+echo "  Uploaded $(ls /opt/aura/terraform/*.tf 2>/dev/null | wc -l | tr -d ' ') .tf files"
 
 # Wait for orchestrator (best-effort, don't fail setup if it's slow)
 echo ""
@@ -122,6 +132,10 @@ echo ""
 echo "=== Setup Complete ==="
 echo "ALB: http://${ALB_DNS}"
 echo "Orchestrator: http://${ALB_DNS}:3030"
+echo "S3 Config Bucket: ${S3_BUCKET}"
+echo ""
+echo "To index Terraform into the KB, ask Aura:"
+echo "  'Index Terraform files from s3_bucket=${S3_BUCKET}, s3_prefix=terraform/'"
 echo "Setup log: $LOG"
 
 # Always exit 0 — infrastructure is deployed, services may still be starting
