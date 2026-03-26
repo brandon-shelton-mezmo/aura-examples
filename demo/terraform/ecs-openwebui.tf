@@ -15,13 +15,13 @@ resource "aws_ecs_task_definition" "openwebui" {
     essential = true
     portMappings = [{ containerPort = 8080, protocol = "tcp" }]
     environment = [
-      # Point OpenWebUI at the Aura orchestrator via the external ALB
-      { name = "OPENAI_API_BASE_URL", value = "http://${aws_lb.main.dns_name}:3030/v1" },
-      { name = "OPENAI_API_KEY", value = "not-needed" },
+      # Connect to all 5 Aura agents via ALB ports (semicolon-separated)
+      { name = "OPENAI_API_BASE_URLS", value = "http://${aws_lb.main.dns_name}:3030/v1;http://${aws_lb.main.dns_name}:3031/v1;http://${aws_lb.main.dns_name}:3032/v1;http://${aws_lb.main.dns_name}:3033/v1;http://${aws_lb.main.dns_name}:3034/v1" },
+      { name = "OPENAI_API_KEYS", value = "not-needed;not-needed;not-needed;not-needed;not-needed" },
 
       # Branding
       { name = "WEBUI_NAME", value = "Aura" },
-      { name = "DEFAULT_MODELS", value = "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0" },
+      { name = "DEFAULT_MODELS", value = "aura/discovery-orchestrator" },
 
       # Disable auth for demo — users land directly in the chat
       { name = "WEBUI_AUTH", value = "false" },

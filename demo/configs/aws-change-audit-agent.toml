@@ -32,7 +32,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-change-audit-agent"
+name = "aura/change-audit"
 temperature = 0.2          # Very low temp for precise, deterministic audit output
 turn_depth = 10            # Enough depth for CloudTrail scan + KB lookup + diff + report
 max_tokens = 8192          # Large output for detailed risk-rated reports

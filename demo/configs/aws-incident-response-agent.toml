@@ -32,7 +32,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-incident-response-agent"
+name = "aura/incident-response"
 temperature = 0.2          # Very low temp for precise, factual incident analysis
 turn_depth = 20            # Highest — deep investigation requires many sequential tool calls
 max_tokens = 8192          # Large output for detailed incident reports

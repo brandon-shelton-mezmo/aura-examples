@@ -35,7 +35,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-orchestrator"
+name = "aura/discovery-orchestrator"
 temperature = 0.3
 turn_depth = 30            # Enough for: count resources, delegate in parallel, synthesize
 max_tokens = 8192

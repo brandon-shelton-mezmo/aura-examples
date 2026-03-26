@@ -33,7 +33,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-postmortem-agent"
+name = "aura/post-mortem"
 temperature = 0.4          # Slightly higher than discovery for narrative writing
 turn_depth = 15            # Deep investigation across CloudTrail, ECS, CloudWatch
 max_tokens = 8192          # Large output for detailed post-mortem documents

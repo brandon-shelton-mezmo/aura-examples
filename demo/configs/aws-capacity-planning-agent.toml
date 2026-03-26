@@ -38,7 +38,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-capacity-planning-agent"
+name = "aura/capacity-planning"
 temperature = 0.3          # Low temp for factual, structured analysis
 turn_depth = 10            # Capacity checks are focused — fewer loops than full discovery
 max_tokens = 8192          # Large output for detailed tables and recommendations

@@ -29,7 +29,7 @@ region = "{{ env.AWS_REGION | default: 'us-east-1' }}"
 
 # --- Agent Configuration ---
 [agent]
-name = "aws-discovery-agent"
+name = "aura/discovery-worker"
 temperature = 0.3          # Low temp for factual, structured output
 turn_depth = 200           # High depth — must be enough for 1 call_aws + N individual qdrant-store calls per resource
 max_tokens = 8192          # Large output for detailed resource descriptions
