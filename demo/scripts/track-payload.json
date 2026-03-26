@@ -117,6 +117,12 @@
               "type": "service",
               "hostname": "cloud-client",
               "port": 80
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -137,6 +143,12 @@
               "type": "service",
               "hostname": "cloud-client",
               "port": 80
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -151,6 +163,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -165,6 +183,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -179,6 +203,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -193,6 +223,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -207,6 +243,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },
@@ -221,6 +263,12 @@
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
+            },
+            {
+              "title": "Aura Chat",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 3000
             }
           ]
         },

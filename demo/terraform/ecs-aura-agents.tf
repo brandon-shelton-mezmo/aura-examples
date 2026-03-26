@@ -138,7 +138,8 @@ resource "aws_ecs_task_definition" "agents" {
           { name = "AWS_MCP_URL", value = "http://localhost:8091/mcp" },
           { name = "QDRANT_MCP_URL", value = "http://localhost:8000/mcp" },
           { name = "AURA_WORKER_MCP_URL", value = "http://localhost:8095/mcp" },
-          { name = "CONFIG_PATH", value = "/app/config.toml" }
+          { name = "CONFIG_PATH", value = "/app/config.toml" },
+          { name = "TOOL_RESULT_MODE", value = "open-web-ui" }
         ],
         # Cross-account Bedrock creds (when SCP blocks native Bedrock)
         var.bedrock_access_key_id != "" ? [
