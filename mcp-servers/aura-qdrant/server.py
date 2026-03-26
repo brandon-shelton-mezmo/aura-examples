@@ -671,14 +671,29 @@ def index_terraform(
     tf_files = {}
 
     if s3_bucket:
-        # Read from S3
-        s3 = boto3.client("s3")
+        # Read from S3 — try with credentials first, fall back to unsigned for public buckets
+        from botocore import UNSIGNED
+        from botocore.config import Config as BotoConfig
         try:
+            s3 = boto3.client("s3")
             response = s3.list_objects_v2(Bucket=s3_bucket, Prefix=s3_prefix)
+        except Exception:
+            # Fall back to unsigned access for public buckets
+            s3 = boto3.client("s3", config=BotoConfig(signature_version=UNSIGNED))
+            try:
+                response = s3.list_objects_v2(Bucket=s3_bucket, Prefix=s3_prefix)
+            except Exception as e:
+                return f"Error reading from S3: {e}"
+        try:
             for obj in response.get("Contents", []):
                 key = obj["Key"]
                 if key.endswith(".tf"):
-                    body = s3.get_object(Bucket=s3_bucket, Key=key)["Body"].read().decode("utf-8")
+                    try:
+                        body = s3.get_object(Bucket=s3_bucket, Key=key)["Body"].read().decode("utf-8")
+                    except Exception:
+                        # Try unsigned if credentialed read fails
+                        s3_unsigned = boto3.client("s3", config=BotoConfig(signature_version=UNSIGNED))
+                        body = s3_unsigned.get_object(Bucket=s3_bucket, Key=key)["Body"].read().decode("utf-8")
                     filename = key.split("/")[-1]
                     tf_files[filename] = body
         except Exception as e:
