@@ -128,10 +128,22 @@ if [ "$HEALTHY" = "false" ]; then
   echo "WARNING: Orchestrator not yet healthy. Services may still be starting."
 fi
 
+# Set up reverse proxy for OpenWebUI — Instruqt service tabs proxy to cloud-client ports
+# socat forwards cloud-client:3000 → ALB:3000 (OpenWebUI)
+echo "Setting up OpenWebUI proxy on port 3000..."
+which socat > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq socat > /dev/null 2>&1) || true
+if which socat > /dev/null 2>&1 && [ "${ALB_DNS}" != "not-ready" ]; then
+  nohup socat TCP-LISTEN:3000,fork,reuseaddr TCP:${ALB_DNS}:3000 > /dev/null 2>&1 &
+  echo "  OpenWebUI proxy running on port 3000 → ${ALB_DNS}:3000"
+else
+  echo "  WARNING: socat not available or ALB not ready. OpenWebUI tab may not work."
+fi
+
 echo ""
 echo "=== Setup Complete ==="
 echo "ALB: http://${ALB_DNS}"
 echo "Orchestrator: http://${ALB_DNS}:3030"
+echo "OpenWebUI: http://${ALB_DNS}:3000 (proxied on cloud-client:3000)"
 echo "S3 Config Bucket: ${S3_BUCKET}"
 echo ""
 echo "To index Terraform into the KB, ask Aura:"
