@@ -21,7 +21,7 @@ resource "aws_ecs_task_definition" "openwebui" {
 
       # Branding
       { name = "WEBUI_NAME", value = "Aura" },
-      { name = "DEFAULT_MODELS", value = "aura/discovery-orchestrator" },
+      { name = "DEFAULT_MODELS", value = "aura/discovery" },
 
       # Disable auth for demo — users land directly in the chat
       { name = "WEBUI_AUTH", value = "false" },
