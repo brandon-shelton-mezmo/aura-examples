@@ -31,6 +31,9 @@ resource "aws_ecs_task_definition" "openwebui" {
       # Disable features that don't apply to the demo
       { name = "ENABLE_OLLAMA_API", value = "false" },
       { name = "ENABLE_RAG_WEB_SEARCH", value = "false" },
+      { name = "ENABLE_COMMUNITY_SHARING", value = "false" },
+      { name = "SHOW_ADMIN_DETAILS", value = "false" },
+      { name = "USER_AGENT", value = "Aura Demo" },
 
       # SRE-focused prompt suggestions
       { name = "DEFAULT_PROMPT_SUGGESTIONS", value = jsonencode([
