@@ -999,14 +999,15 @@ def search(
         meta = hit.payload.get("metadata", {})
         score = round(hit.score, 3)
 
-        # Truncate document for readability
-        preview = doc[:600]
-        if len(doc) > 600:
+        # Truncate document for readability (2000 chars gives full config for most resources)
+        max_preview = 2000
+        preview = doc[:max_preview]
+        if len(doc) > max_preview:
             # Cut at sentence boundary
             last_period = preview.rfind(".")
             last_newline = preview.rfind("\n")
             cut_at = max(last_period, last_newline)
-            if cut_at > 300:
+            if cut_at > 1000:
                 preview = preview[:cut_at + 1]
             preview += "\n  [...]"
 
