@@ -213,6 +213,25 @@ AWS_DISCOVERY_CONFIG = {
         "response_key": "TableNames",
         "is_string_list": True,
     },
+    "ecs/cluster": {
+        "client": "ecs",
+        "method": "list_clusters",
+        "response_key": "clusterArns",
+        "is_string_list": True,
+    },
+    "sqs/queue": {
+        "client": "sqs",
+        "method": "list_queues",
+        "response_key": "QueueUrls",
+        "is_string_list": True,
+    },
+    "sns/topic": {
+        "client": "sns",
+        "method": "list_topics",
+        "response_key": "Topics",
+        "id_field": "TopicArn",
+        "name_fields": [],
+    },
 }
 
 
@@ -360,7 +379,7 @@ def discover_and_store(
                       ec2/vpc, ec2/instance, ec2/security-group, ec2/subnet,
                       s3/bucket, lambda/function, iam/role, elbv2/load-balancer,
                       route53/hosted-zone, cloudformation/stack, rds/instance,
-                      dynamodb/table
+                      dynamodb/table, ecs/cluster, sqs/queue, sns/topic
         collection_name: Qdrant collection (typically 'aws_resources').
         scan_id: Scan identifier (e.g., 'scan-2026-03-20-001').
         region: AWS region (default 'us-east-1'). Used for regional services.
