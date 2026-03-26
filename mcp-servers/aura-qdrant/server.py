@@ -232,6 +232,69 @@ AWS_DISCOVERY_CONFIG = {
         "id_field": "TopicArn",
         "name_fields": [],
     },
+    "elbv2/target-group": {
+        "client": "elbv2",
+        "method": "describe_target_groups",
+        "response_key": "TargetGroups",
+        "id_field": "TargetGroupArn",
+        "name_fields": ["TargetGroupName"],
+    },
+    "efs/file-system": {
+        "client": "efs",
+        "method": "describe_file_systems",
+        "response_key": "FileSystems",
+        "id_field": "FileSystemId",
+        "name_fields": ["Name"],
+    },
+    "logs/log-group": {
+        "client": "logs",
+        "method": "describe_log_groups",
+        "response_key": "logGroups",
+        "id_field": "arn",
+        "name_fields": ["logGroupName"],
+    },
+}
+
+# Multi-step discovery handlers for services that need iterative API calls
+def _discover_ecs_services(client, region, account, scan_id):
+    """Discover ECS services — requires listing clusters first, then services per cluster."""
+    items = []
+    clusters = client.list_clusters().get("clusterArns", [])
+    for cluster_arn in clusters:
+        cluster_name = cluster_arn.split("/")[-1]
+        service_arns = client.list_services(cluster=cluster_arn).get("serviceArns", [])
+        if service_arns:
+            described = client.describe_services(cluster=cluster_arn, services=service_arns)
+            for svc in described.get("services", []):
+                svc["_cluster_name"] = cluster_name
+                items.append(svc)
+    return items
+
+def _discover_ecs_task_defs(client, region, account, scan_id):
+    """Discover ECS task definitions — list families then describe latest revision."""
+    items = []
+    families = client.list_task_definition_families(status="ACTIVE").get("families", [])
+    for family in families:
+        try:
+            td = client.describe_task_definition(taskDefinition=family)
+            items.append(td.get("taskDefinition", {}))
+        except Exception:
+            continue
+    return items
+
+CUSTOM_DISCOVERY_HANDLERS = {
+    "ecs/service": {
+        "client": "ecs",
+        "handler": _discover_ecs_services,
+        "id_field": "serviceArn",
+        "name_fields": ["serviceName"],
+    },
+    "ecs/task-definition": {
+        "client": "ecs",
+        "handler": _discover_ecs_task_defs,
+        "id_field": "taskDefinitionArn",
+        "name_fields": ["family"],
+    },
 }
 
 
@@ -378,8 +441,10 @@ def discover_and_store(
         service_type: What to discover. Format: "service/type". Valid values:
                       ec2/vpc, ec2/instance, ec2/security-group, ec2/subnet,
                       s3/bucket, lambda/function, iam/role, elbv2/load-balancer,
-                      route53/hosted-zone, cloudformation/stack, rds/instance,
-                      dynamodb/table, ecs/cluster, sqs/queue, sns/topic
+                      elbv2/target-group, route53/hosted-zone, cloudformation/stack,
+                      rds/instance, dynamodb/table, ecs/cluster, ecs/service,
+                      ecs/task-definition, sqs/queue, sns/topic, efs/file-system,
+                      logs/log-group
         collection_name: Qdrant collection (typically 'aws_resources').
         scan_id: Scan identifier (e.g., 'scan-2026-03-20-001').
         region: AWS region (default 'us-east-1'). Used for regional services.
@@ -389,8 +454,9 @@ def discover_and_store(
     import boto3
 
     config = AWS_DISCOVERY_CONFIG.get(service_type)
-    if not config:
-        valid = ", ".join(sorted(AWS_DISCOVERY_CONFIG.keys()))
+    custom = CUSTOM_DISCOVERY_HANDLERS.get(service_type)
+    if not config and not custom:
+        valid = ", ".join(sorted(list(AWS_DISCOVERY_CONFIG.keys()) + list(CUSTOM_DISCOVERY_HANDLERS.keys())))
         return f"Unknown service_type '{service_type}'. Valid: {valid}"
 
     ensure_collection(collection_name)
@@ -404,7 +470,8 @@ def discover_and_store(
             account = "unknown"
 
     # Determine the effective region for the API call
-    client_name = config["client"]
+    effective_config = config or custom
+    client_name = effective_config["client"]
     global_services = {"s3", "iam", "route53"}
     effective_region = None if client_name in global_services else region
 
@@ -414,23 +481,28 @@ def discover_and_store(
         else:
             client = boto3.client(client_name)
 
-        method = getattr(client, config["method"])
-        params = config.get("params", {})
-        response = method(**params)
+        if custom and "handler" in custom:
+            # Multi-step custom handler (e.g., ECS services, task definitions)
+            items = custom["handler"](client, region, account, scan_id)
+            config = custom  # Use custom config for id_field/name_fields
+        else:
+            method = getattr(client, config["method"])
+            params = config.get("params", {})
+            response = method(**params)
+
+            # Extract resource list from response
+            response_key = config["response_key"]
+            items = response.get(response_key, [])
+
+            # Flatten nested structures (e.g., Reservations → Instances)
+            if config.get("flatten"):
+                flat = []
+                for item in items:
+                    if isinstance(item, dict) and config["flatten"] in item:
+                        flat.extend(item[config["flatten"]])
+                items = flat
     except Exception as e:
         return f"AWS API error for {service_type}: {str(e)}"
-
-    # Extract resource list from response
-    response_key = config["response_key"]
-    items = response.get(response_key, [])
-
-    # Flatten nested structures (e.g., Reservations → Instances)
-    if config.get("flatten"):
-        flat = []
-        for item in items:
-            if isinstance(item, dict) and config["flatten"] in item:
-                flat.extend(item[config["flatten"]])
-        items = flat
 
     service, rtype = service_type.split("/")
     effective_region_str = region if effective_region else "global"
