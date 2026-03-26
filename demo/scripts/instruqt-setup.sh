@@ -129,14 +129,39 @@ if [ "$HEALTHY" = "false" ]; then
 fi
 
 # Set up reverse proxy for OpenWebUI — Instruqt service tabs proxy to cloud-client ports
-# socat forwards cloud-client:3000 → ALB:3000 (OpenWebUI)
+# nginx properly handles HTTP proxying with correct headers for SPA routing
 echo "Setting up OpenWebUI proxy on port 3000..."
-which socat > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq socat > /dev/null 2>&1) || true
-if which socat > /dev/null 2>&1 && [ "${ALB_DNS}" != "not-ready" ]; then
-  nohup socat TCP-LISTEN:3000,fork,reuseaddr TCP:${ALB_DNS}:3000 > /dev/null 2>&1 &
-  echo "  OpenWebUI proxy running on port 3000 → ${ALB_DNS}:3000"
+which nginx > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq nginx > /dev/null 2>&1) || true
+if which nginx > /dev/null 2>&1 && [ "${ALB_DNS}" != "not-ready" ]; then
+  cat > /etc/nginx/sites-available/openwebui << NGINX_CONF
+server {
+    listen 3000;
+    location / {
+        proxy_pass http://${ALB_DNS}:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
+NGINX_CONF
+  ln -sf /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui 2>/dev/null || true
+  rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+  nginx -t 2>/dev/null && nginx 2>/dev/null &
+  echo "  OpenWebUI nginx proxy running on port 3000 → ${ALB_DNS}:3000"
 else
-  echo "  WARNING: socat not available or ALB not ready. OpenWebUI tab may not work."
+  echo "  WARNING: nginx not available or ALB not ready. OpenWebUI tab may not work."
+  # Fallback to socat
+  which socat > /dev/null 2>&1 || (apt-get install -y -qq socat > /dev/null 2>&1) || true
+  if which socat > /dev/null 2>&1; then
+    nohup socat TCP-LISTEN:3000,fork,reuseaddr TCP:${ALB_DNS}:3000 > /dev/null 2>&1 &
+    echo "  Fallback: socat proxy on port 3000"
+  fi
 fi
 
 echo ""
