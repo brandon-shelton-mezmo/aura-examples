@@ -108,7 +108,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-orchestrator"
             },
             {
               "title": "Agent Config (aura/discovery)",
@@ -135,7 +136,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-orchestrator"
             },
             {
               "title": "Agent Config (aura/discovery)",
@@ -162,7 +164,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-incident-response"
             },
             {
               "title": "Agent Config (aura/incident-response)",
@@ -189,7 +192,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-change-audit"
             },
             {
               "title": "Agent Config (aura/change-audit)",
@@ -216,7 +220,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-post-mortem"
             },
             {
               "title": "Agent Config (aura/post-mortem)",
@@ -243,7 +248,8 @@
             {
               "title": "Live Logs",
               "type": "terminal",
-              "hostname": "cloud-client"
+              "hostname": "cloud-client",
+              "cmd": "tail-capacity-planning"
             },
             {
               "title": "Agent Config (aura/capacity-planning)",
