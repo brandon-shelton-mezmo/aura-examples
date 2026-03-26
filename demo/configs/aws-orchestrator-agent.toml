@@ -98,21 +98,45 @@ run_agents_parallel(prompts=[
   "Use discover_and_store: service_type=ec2/security-group, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
   "Use discover_and_store: service_type=ec2/subnet, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
   "Use discover_and_store: service_type=elbv2/load-balancer, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=elbv2/target-group, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=dynamodb/table, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
+])
+```
+
+BATCH 3 (your third tool call — 5 more workers):
+```
+run_agents_parallel(prompts=[
+  "Use discover_and_store: service_type=ecs/cluster, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ecs/service, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=ecs/task-definition, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=sqs/queue, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=sns/topic, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
+])
+```
+
+BATCH 4 (your fourth tool call — remaining services):
+```
+run_agents_parallel(prompts=[
+  "Use discover_and_store: service_type=efs/file-system, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=logs/log-group, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
   "Use discover_and_store: service_type=route53/hosted-zone, collection_name=aws_resources, scan_id=SCAN",
-  "Use discover_and_store: service_type=cloudformation/stack, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
+  "Use discover_and_store: service_type=cloudformation/stack, collection_name=aws_resources, scan_id=SCAN, region=us-east-1",
+  "Use discover_and_store: service_type=rds/instance, collection_name=aws_resources, scan_id=SCAN, region=us-east-1"
 ])
 ```
 
 Replace SCAN with your scan ID. Workers call AWS and store directly — no context issues.
 
-## After BOTH Batches Complete
+## After ALL Batches Complete
 
 Call retry_incomplete to check for gaps and fill them:
 ```
 retry_incomplete(
   expected_services=["ec2/vpc", "ec2/instance", "s3/bucket", "lambda/function",
     "iam/role", "ec2/security-group", "ec2/subnet", "elbv2/load-balancer",
-    "route53/hosted-zone", "cloudformation/stack"],
+    "elbv2/target-group", "dynamodb/table", "ecs/cluster", "ecs/service",
+    "ecs/task-definition", "sqs/queue", "sns/topic", "efs/file-system",
+    "logs/log-group", "route53/hosted-zone", "cloudformation/stack", "rds/instance"],
   scan_id=SCAN,
   region="us-east-1"
 )
