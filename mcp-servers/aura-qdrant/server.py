@@ -875,13 +875,24 @@ def search(
     query_filter = models.Filter(must=must_conditions) if must_conditions else None
 
     vector = embed_text(query)
-    results = qdrant.search(
-        collection_name=collection_name,
-        query_vector=vector,
-        query_filter=query_filter,
-        limit=limit,
-        with_payload=True,
-    )
+    try:
+        # qdrant-client >= 1.12 uses query_points
+        results = qdrant.query_points(
+            collection_name=collection_name,
+            query=vector,
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=True,
+        ).points
+    except AttributeError:
+        # Fallback for older qdrant-client
+        results = qdrant.search(
+            collection_name=collection_name,
+            query_vector=vector,
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=True,
+        )
 
     if not results:
         filters_desc = ""
