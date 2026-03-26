@@ -67,6 +67,20 @@
       },
       "challenges": [
         {
+          "slug": "meet-aura",
+          "title": "Meet Aura",
+          "type": "challenge",
+          "timelimit": 300,
+          "assignment": "## Meet Aura\n\n**Aura** is Mezmo's AI agent framework for SRE teams. It turns infrastructure complexity into answers \u2014 no code required, just configuration.\n\n### The Problem\n\nYou're a new engineer. You just inherited an AWS environment you've never seen. Your team needs you on-call by Monday. You need to understand:\n\n- What's running and how it's connected\n- Where the risks are hiding\n- What happens when something breaks\n\nClicking through the AWS Console takes hours. Reading runbooks takes days. Asking the team takes weeks of tribal knowledge transfer.\n\n### How Aura Works\n\nAura uses **specialized AI agents** that connect to your infrastructure through MCP (Model Context Protocol) tool servers:\n\n1. **Discovery** \u2014 Agents crawl AWS APIs, parse every resource, generate embeddings, and store them in a vector database (Qdrant). No raw AWS data passes through any LLM.\n\n2. **Knowledge Base** \u2014 The vector database becomes a semantic map of your infrastructure. Agents search it with natural language, not SQL.\n\n3. **Specialized Agents** \u2014 Each agent has a focused persona and toolset:\n   - **Orchestrator** \u2014 Coordinates discovery and delegates to workers\n   - **Incident Response** \u2014 Triages alerts, traces blast radius\n   - **Change Audit** \u2014 Scans CloudTrail, risk-rates changes\n   - **Post-Mortem** \u2014 Constructs blameless post-mortems from evidence\n   - **Capacity Planning** \u2014 Finds waste, right-sizing gaps, resilience issues\n\n### What Makes It Different\n\n- **Config-only** \u2014 Agents are defined in TOML files. No Python, no Rust, no SDKs.\n- **MCP tools** \u2014 Agents connect to external tools (AWS APIs, Qdrant, etc.) via a standard protocol.\n- **Context-safe** \u2014 Discovery bypasses LLM context entirely. Raw API data never touches the model.\n- **Composable** \u2014 You can build new agents in minutes by writing a config file.\n\n### What You'll Do in This Track\n\nIn the next 30 minutes, you will:\n\n1. Explore unfamiliar AWS infrastructure the hard way (console clicking)\n2. Watch Aura discover and catalog everything automatically\n3. Ask natural language questions about the environment\n4. Triage an incident, audit changes, build a post-mortem\n5. Create your own custom agent from a TOML config\n\nLet's start.\n\n> **Click Next to continue.**",
+          "tabs": [
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            }
+          ]
+        },
+        {
           "slug": "welcome-to-bella-vista",
           "title": "Welcome to Bella Vista",
           "type": "challenge",
