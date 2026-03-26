@@ -160,6 +160,8 @@ resource "aws_iam_role_policy" "aura_agent_task" {
           "servicequotas:List*", "servicequotas:Get*",
           "ecr:Describe*", "ecr:List*",
           "efs:Describe*",
+          "elasticfilesystem:Describe*",
+          "logs:DescribeLogGroups", "logs:GetLogEvents", "logs:FilterLogEvents",
           "secretsmanager:ListSecrets", "secretsmanager:DescribeSecret"
         ]
         Resource = "*"
