@@ -150,10 +150,26 @@ server {
     }
 }
 NGINX_CONF
+  # Also serve TOML config files on port 8080 for the "Agent Config" tab
+  cat >> /etc/nginx/sites-available/openwebui << NGINX_TOML
+
+server {
+    listen 8080;
+    root /opt/aura/configs;
+    autoindex on;
+    default_type text/plain;
+
+    location / {
+        add_header Content-Type text/plain;
+    }
+}
+NGINX_TOML
+
   ln -sf /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui 2>/dev/null || true
   rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
   nginx -t 2>/dev/null && nginx 2>/dev/null &
   echo "  OpenWebUI nginx proxy running on port 3000 → ${ALB_DNS}:3000"
+  echo "  TOML config server running on port 8080"
 else
   echo "  WARNING: nginx not available or ALB not ready. OpenWebUI tab may not work."
   # Fallback to socat
@@ -164,15 +180,43 @@ else
   fi
 fi
 
+# Create log tail helper scripts for each agent
+# These are used by the "Live Logs" terminal tabs in Instruqt
+mkdir -p /opt/aura/logs
+for agent in orchestrator incident-response change-audit post-mortem capacity-planning discovery-worker; do
+  cat > /usr/local/bin/tail-${agent} << TAIL_SCRIPT
+#!/bin/sh
+export AWS_PAGER=""
+echo "=== Live logs for ${agent} ==="
+echo "Streaming from CloudWatch /ecs/bella-vista..."
+echo ""
+aws logs tail /ecs/bella-vista --follow --format short --filter-pattern "${agent}" --region us-east-1 2>/dev/null || \
+  echo "Waiting for logs... (agent may still be starting)"
+TAIL_SCRIPT
+  chmod +x /usr/local/bin/tail-${agent}
+done
+
+# Also create a combined log tail
+cat > /usr/local/bin/tail-aura << 'TAIL_ALL'
+#!/bin/sh
+export AWS_PAGER=""
+echo "=== Live Aura logs ==="
+echo "Streaming all agent logs from CloudWatch /ecs/bella-vista..."
+echo ""
+aws logs tail /ecs/bella-vista --follow --format short --region us-east-1 2>/dev/null || \
+  echo "Waiting for logs... (services may still be starting)"
+TAIL_ALL
+chmod +x /usr/local/bin/tail-aura
+
 echo ""
 echo "=== Setup Complete ==="
 echo "ALB: http://${ALB_DNS}"
 echo "Orchestrator: http://${ALB_DNS}:3030"
 echo "OpenWebUI: http://${ALB_DNS}:3000 (proxied on cloud-client:3000)"
+echo "Config viewer: http://cloud-client:8080/"
 echo "S3 Config Bucket: ${S3_BUCKET}"
 echo ""
-echo "To index Terraform into the KB, ask Aura:"
-echo "  'Index Terraform files from s3_bucket=${S3_BUCKET}, s3_prefix=terraform/'"
+echo "Log tail commands: tail-orchestrator, tail-incident-response, tail-aura (all)"
 echo "Setup log: $LOG"
 
 # Always exit 0 — infrastructure is deployed, services may still be starting

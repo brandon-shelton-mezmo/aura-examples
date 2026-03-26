@@ -100,21 +100,22 @@
           "assignment": "## Discover Everything\n\nAura is running on ECS in this environment. Let's trigger a full discovery.\n\nFirst, find the ALB and check the orchestrator:\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\necho \"ALB: $ALB_DNS\"\ncurl -s http://$ALB_DNS:3030/health\n```\n\nNow trigger discovery:\n\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Discover my AWS environment in us-east-1. Catalog everything.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nThis takes 2-3 minutes. The orchestrator dispatches parallel workers that call AWS APIs, parse resources, generate embeddings, and store in Qdrant.\n\n**No raw AWS data passes through any LLM context.**\n\n> **Click Check when discovery completes.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
-              "title": "AWS Console",
-              "type": "service",
-              "hostname": "cloud-client",
-              "port": 80
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/discovery)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-orchestrator-agent.toml"
             }
           ]
         },
@@ -126,21 +127,22 @@
           "assignment": "## Query Your Knowledge Base\n\n**Start a new chat** in the Aura Chat tab (click the pencil icon in the top-left).\n\nThe KB is populated. Ask Aura about the environment.\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n```\n\n**What ECS services exist?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"What ECS services are running? List them with configurations.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**What depends on the database?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"What depends on the Bella Vista database? Trace the dependency chain.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Any security concerns?**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Are there security concerns? Check for permissive security groups and public S3 buckets.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nTry your own questions!\n\n> **Click Check when done exploring.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
-              "title": "AWS Console",
-              "type": "service",
-              "hostname": "cloud-client",
-              "port": 80
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/discovery)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-orchestrator-agent.toml"
             }
           ]
         },
@@ -152,15 +154,22 @@
           "assignment": "## Incident Response (Choose Your Own Adventure)\n\nA CloudWatch alarm is firing. Let's triage with the incident response agent (port 3031).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3031/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"The CloudWatch alarm bella-vista-5xx-high is firing. Triage: What is broken? What is the blast radius? What changed recently? What should we do?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Dig deeper:**\n```\ncurl -s http://$ALB_DNS:3031/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"If the Bella Vista database goes down completely, what is the full blast radius?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/incident-response)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-incident-response-agent.toml"
             }
           ]
         },
@@ -172,15 +181,22 @@
           "assignment": "## Change Audit (Choose Your Own Adventure)\n\nSomeone made a risky change. Let's find it using the change audit agent (port 3032).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3032/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Scan CloudTrail for recent infrastructure changes. Risk-rate each change and flag anything concerning.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n**Investigate the risky change:**\n```\ncurl -s http://$ALB_DNS:3032/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"The security group bella-vista-legacy-ssh-sg has SSH open to the world. What resources use it? What is the exposure?\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/change-audit)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-change-audit-agent.toml"
             }
           ]
         },
@@ -192,15 +208,22 @@
           "assignment": "## Post-Mortem Construction (Choose Your Own Adventure)\n\nConstruct a blameless post-mortem using the post-mortem agent (port 3033).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3033/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Construct a blameless post-mortem for the Bella Vista checkout incident. The alarm bella-vista-5xx-high was firing. Reconstruct the timeline, identify contributing factors, assess blast radius, and recommend action items.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nLook for: blameless language, timeline, contributing factors, action items, blast radius.\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/post-mortem)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-postmortem-agent.toml"
             }
           ]
         },
@@ -212,15 +235,22 @@
           "assignment": "## Capacity Planning (Choose Your Own Adventure)\n\nFind waste and resilience gaps using the capacity planning agent (port 3034).\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3034/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Run a full capacity planning review. Check for: underutilized resources, cost waste, resilience gaps, over-provisioned services, and quota limits.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nAura should find: single-AZ RDS, over-provisioned Lambda (3GB), stopped EC2 instances, untagged resources.\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Live Logs",
+              "type": "terminal",
+              "hostname": "cloud-client"
+            },
+            {
+              "title": "Agent Config (aura/capacity-planning)",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8080,
+              "path": "/aws-capacity-planning-agent.toml"
             }
           ]
         },
@@ -232,15 +262,15 @@
           "assignment": "## Build Your Own Agent (Choose Your Own Adventure)\n\nCreate a custom agent config. Pick a persona: Security Auditor, Onboarding Guide, Cost Reporter, or your own.\n\nCreate the config:\n\n```\ncat > /tmp/my-agent.toml << 'EOF'\n[llm]\nprovider = \"bedrock\"\nmodel = \"us.anthropic.claude-sonnet-4-20250514-v1:0\"\nregion = \"us-east-1\"\n\n[agent]\nname = \"my-custom-agent\"\ntemperature = 0.3\nturn_depth = 10\nmax_tokens = 8192\nsystem_prompt = \"\"\"\nYou are a Security Auditor for the Bella Vista platform.\nSearch the Qdrant KB for security risks:\n- Permissive security groups (0.0.0.0/0)\n- Public S3 buckets\n- Excessive IAM permissions\n- Missing tags\n- Single points of failure\nPresent findings as a risk-rated table.\n\"\"\"\n\n[mcp.servers.qdrant]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8000/mcp\"\n\n[mcp.servers.aws_api]\ntransport = \"http_streamable\"\nurl = \"http://localhost:8091/mcp\"\nEOF\n\ncat /tmp/my-agent.toml\n```\n\nThis demonstrates the config-only approach. No code. No deployment pipeline. Just a TOML file.\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
             }
           ]
         },
@@ -252,15 +282,15 @@
           "assignment": "## AI-Generated Agent (Choose Your Own Adventure)\n\nAsk Aura to design a new agent based on what it discovered.\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate a complete Aura TOML config for a Bella Vista Reliability Agent that monitors the critical order flow path, knows the risks you found, and can answer health questions. Output ONLY the TOML file.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nThe generated config references actual resource names from the KB.\n\n**Try others:**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate an Aura TOML config for a Bella Vista Runbook Agent that serves as the on-call runbook. Output ONLY the TOML.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Cloud CLI",
-              "type": "terminal",
-              "hostname": "cloud-client"
-            },
-            {
               "title": "Aura Chat",
               "type": "service",
               "hostname": "cloud-client",
               "port": 3000
+            },
+            {
+              "title": "Cloud CLI",
+              "type": "terminal",
+              "hostname": "cloud-client"
             }
           ]
         },
