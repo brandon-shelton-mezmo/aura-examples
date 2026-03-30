@@ -42,6 +42,10 @@ ln -sf /opt/aura/bin/* /usr/local/bin/ 2>/dev/null || true
 # Copy custom agent template to editable location for the "Build Your Own Agent" challenge
 cp /opt/aura/configs/custom-agent-template.toml /opt/aura/my-agent.toml 2>/dev/null || true
 
+# Set up aura-cli home directory (permissions deny local tool execution in demo)
+mkdir -p /root/.aura
+cp /opt/aura/dotfiles/.aura/settings.json /root/.aura/settings.json 2>/dev/null || true
+
 # Configure AWS credentials (admin creds from Instruqt)
 echo "[4/5] Configuring credentials..."
 

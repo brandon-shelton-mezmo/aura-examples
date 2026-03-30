@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "deny": ["Shell(*)", "Update(*)", "Read(*)", "ListFiles(*)", "SearchFiles(*)", "FindFiles(*)", "FileInfo(*)"]
+  }
+}
