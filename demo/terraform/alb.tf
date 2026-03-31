@@ -25,13 +25,14 @@ resource "aws_lb_listener" "http" {
 # Target Group: Bella Vista (default)
 resource "aws_lb_target_group" "bella_vista" {
   name        = "bella-vista-web"
-  port        = 8080
+  port        = 3001
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
   health_check {
-    path                = "/"
+    path                = "/api/health"
+    port                = "3001"
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 5

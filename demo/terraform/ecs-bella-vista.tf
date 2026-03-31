@@ -4,8 +4,8 @@ resource "aws_ecs_task_definition" "bella_vista" {
   family                   = "bella-vista-web"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
+  cpu                      = 512
+  memory                   = 1024
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.bella_vista_task.arn
 
@@ -23,11 +23,11 @@ resource "aws_ecs_task_definition" "bella_vista" {
       { name = "DISABLE_AUTO_TRAFFIC", value = "false" }
     ]
     healthCheck = {
-      command     = ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      command     = ["CMD-SHELL", "curl -sf http://localhost:3001/api/health || exit 1"]
       interval    = 15
       timeout     = 5
       retries     = 5
-      startPeriod = 30
+      startPeriod = 60
     }
     logConfiguration = {
       logDriver = "awslogs"
@@ -56,6 +56,6 @@ resource "aws_ecs_service" "bella_vista" {
   load_balancer {
     target_group_arn = aws_lb_target_group.bella_vista.arn
     container_name   = "bella-vista"
-    container_port   = 8080
+    container_port   = 3001
   }
 }
