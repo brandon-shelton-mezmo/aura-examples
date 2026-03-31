@@ -88,7 +88,7 @@ resource "aws_ecs_task_definition" "discovery_worker" {
       portMappings = [{ containerPort = 3030, protocol = "tcp" }]
       entryPoint = ["/bin/sh", "-c"]
       command = [
-        "curl -sf https://aura-demo-bundle.s3.amazonaws.com/configs/aws-discovery-agent.toml -o /app/config.toml && echo 'Waiting for sidecars...' && sleep 10 && /app/aura-web-server"
+        "curl -sf https://aura-demo-bundle.s3.amazonaws.com/configs/aws-discovery-agent.toml -o /app/config.toml && echo 'Waiting for sidecars...' && sleep 10 && /app/aura-web-server --verbose"
       ]
       environment = concat(
         [

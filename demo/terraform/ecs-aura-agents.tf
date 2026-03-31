@@ -128,7 +128,7 @@ resource "aws_ecs_task_definition" "agents" {
 
       entryPoint = ["/bin/sh", "-c"]
       command = [
-        "curl -sf https://aura-demo-bundle.s3.amazonaws.com/configs/${each.value.config_key} -o /app/config.toml && echo 'Waiting for sidecars...' && sleep 10 && /app/aura-web-server"
+        "curl -sf https://aura-demo-bundle.s3.amazonaws.com/configs/${each.value.config_key} -o /app/config.toml && echo 'Waiting for sidecars...' && sleep 10 && /app/aura-web-server --verbose"
       ]
 
       # MCP URLs point to localhost — sidecars in the same task
