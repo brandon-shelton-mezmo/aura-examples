@@ -100,10 +100,10 @@
           "assignment": "## Discover Everything\n\nYou're connected to the **aura/discovery** agent in the Aura CLI tab.\n\nType your question directly in the CLI:\n\n> Discover all AWS resources in us-east-1. Catalog everything.\n\n**Pro tips:**\n- Type `/stream` to toggle the SSE event panel \u2014 watch real-time tool execution\n- Type `/expand` to see full tool call details (arguments and results)\n\nDiscovery takes 2-3 minutes across 4 parallel batches. The orchestrator dispatches workers that call AWS APIs, parse resources, generate embeddings, and store in Qdrant.\n\n**No raw AWS data passes through any LLM context.**\n\nSwitch to the **Live Logs** tab to watch CloudWatch logs streaming in real-time.\n\nSwitch to the **Agent Config** tab to see the TOML configuration that defines this agent.\n\n> **Click Next when discovery completes.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/discovery",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for aura/discovery...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for aura/discovery...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli --model \"aura/discovery\""
             },
             {
               "title": "Live Logs",
@@ -128,10 +128,10 @@
           "assignment": "## Query Your Knowledge Base\n\n**Start a new conversation** by typing `/clear` in the Aura CLI tab.\n\nThe knowledge base is populated from the previous discovery. Ask questions:\n\n**What ECS services exist?**\n> What ECS services are running? List them with configurations.\n\n**What depends on the database?**\n> What depends on the Bella Vista database? Trace the dependency chain.\n\n**Any security concerns?**\n> Are there security concerns? Check for permissive security groups and public S3 buckets.\n\nTry your own questions! The agent searches the Qdrant knowledge base and can also make live AWS API calls.\n\n> **Click Next when done exploring.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/discovery",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for aura/discovery...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for aura/discovery...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli --model \"aura/discovery\""
             },
             {
               "title": "Live Logs",
@@ -156,10 +156,10 @@
           "assignment": "## Incident Response\n\nYou're connected to the **aura/incident-response** agent. A CloudWatch alarm is firing.\n\nType in the Aura CLI:\n\n> The CloudWatch alarm bella-vista-5xx-high is firing. Triage: What is broken? What is the blast radius? What changed recently? What should we do?\n\nWatch the agent search the knowledge base AND make live AWS API calls to investigate.\n\n**Dig deeper:**\n> If the Bella Vista database goes down completely, what is the full blast radius?\n\n> **Click Next when done.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/incident-response",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3031/health >/dev/null 2>&1; do echo \"Waiting for aura/incident-response...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3031 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3031/health >/dev/null 2>&1; do echo \"Waiting for aura/incident-response...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3031 aura-cli --model \"aura/incident-response\""
             },
             {
               "title": "Live Logs",
@@ -184,10 +184,10 @@
           "assignment": "## Change Audit\n\nYou're connected to the **aura/change-audit** agent. Someone made a risky change.\n\nType in the Aura CLI:\n\n> Scan CloudTrail for recent infrastructure changes in us-east-1. Risk-rate each change and flag anything concerning.\n\n**Investigate the risky change:**\n> The security group bella-vista-legacy-ssh-sg has SSH open to the world. What resources use it? What is the exposure?\n\n> **Click Next when done.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/change-audit",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3032/health >/dev/null 2>&1; do echo \"Waiting for aura/change-audit...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3032 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3032/health >/dev/null 2>&1; do echo \"Waiting for aura/change-audit...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3032 aura-cli --model \"aura/change-audit\""
             },
             {
               "title": "Live Logs",
@@ -212,10 +212,10 @@
           "assignment": "## Post-Mortem Construction\n\nYou're connected to the **aura/post-mortem** agent.\n\nType in the Aura CLI:\n\n> Construct a blameless post-mortem for the Bella Vista checkout incident. The alarm bella-vista-5xx-high was firing. Reconstruct the timeline, identify contributing factors, assess blast radius, and recommend action items.\n\nLook for: blameless language, timeline, contributing factors, action items, blast radius assessment.\n\n> **Click Next when done.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/post-mortem",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3033/health >/dev/null 2>&1; do echo \"Waiting for aura/post-mortem...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3033 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3033/health >/dev/null 2>&1; do echo \"Waiting for aura/post-mortem...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3033 aura-cli --model \"aura/post-mortem\""
             },
             {
               "title": "Live Logs",
@@ -240,10 +240,10 @@
           "assignment": "## Capacity Planning\n\nYou're connected to the **aura/capacity-planning** agent.\n\nType in the Aura CLI:\n\n> Run a full capacity planning review. Check for: underutilized resources, cost waste, resilience gaps, over-provisioned services, and quota limits.\n\nAura should find: over-provisioned Lambda (3GB), untagged resources, and potential cost savings.\n\n> **Click Next when done.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/capacity-planning",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3034/health >/dev/null 2>&1; do echo \"Waiting for aura/capacity-planning...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3034 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3034/health >/dev/null 2>&1; do echo \"Waiting for aura/capacity-planning...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3034 aura-cli --model \"aura/capacity-planning\""
             },
             {
               "title": "Live Logs",
@@ -279,10 +279,10 @@
               "path": "/opt/aura/my-agent.toml"
             },
             {
-              "title": "Aura CLI",
+              "title": "aura/discovery",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for agent...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for agent...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli --model \"aura/discovery\""
             }
           ]
         },
@@ -294,10 +294,10 @@
           "assignment": "## AI-Generated Agent (Choose Your Own Adventure)\n\nAsk Aura to design a new agent based on what it discovered.\n\n```\nALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`bella-vista-alb`].DNSName' --output text --region us-east-1)\n\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate a complete Aura TOML config for a Bella Vista Reliability Agent that monitors the critical order flow path, knows the risks you found, and can answer health questions. Output ONLY the TOML file.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\nThe generated config references actual resource names from the KB.\n\n**Try others:**\n```\ncurl -s http://$ALB_DNS:3030/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Generate an Aura TOML config for a Bella Vista Runbook Agent that serves as the on-call runbook. Output ONLY the TOML.\"}]}' \\\n  | jq -r '.choices[0].message.content'\n```\n\n> **Click Check when done.**",
           "tabs": [
             {
-              "title": "Aura CLI",
+              "title": "aura/discovery",
               "type": "terminal",
               "hostname": "cloud-client",
-              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for agent...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli"
+              "cmd": ". /etc/profile.d/aura-demo.sh && until curl -sf http://$ALB_DNS:3030/health >/dev/null 2>&1; do echo \"Waiting for agent...\"; sleep 3; done && AURA_AGENT_API_URL=http://$ALB_DNS:3030 aura-cli --model \"aura/discovery\""
             },
             {
               "title": "Cloud CLI",
