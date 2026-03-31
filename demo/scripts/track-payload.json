@@ -153,8 +153,14 @@
           "title": "Incident Response",
           "type": "challenge",
           "timelimit": 600,
-          "assignment": "## Incident Response\n\nYou're connected to the **aura/incident-response** agent. A CloudWatch alarm is firing.\n\nType in the Aura CLI:\n\n> The CloudWatch alarm bella-vista-5xx-high is firing. Triage: What is broken? What is the blast radius? What changed recently? What should we do?\n\nWatch the agent search the knowledge base AND make live AWS API calls to investigate.\n\n**Dig deeper:**\n> If the Bella Vista database goes down completely, what is the full blast radius?\n\n> **Click Next when done.**",
+          "assignment": "## Incident Response\n\n### Step 1: Trigger an Incident\n\nClick the **\ud83d\udea8 Trigger Incident** tab. This will:\n- Simulate a database connection pool exhaustion in the Bella Vista app\n- Generate failed order requests (503 errors)\n- Wait for the CloudWatch alarm `bella-vista-5xx-high` to fire\n\nWatch the terminal \u2014 you'll see orders failing and the alarm state change to **ALARM**.\n\n### Step 2: Triage with Aura\n\nOnce the alarm fires, switch to the **aura/incident-response** tab.\n\nAsk Aura to triage the incident:\n\n> The alarm bella-vista-5xx-high is firing. Triage: What is broken? What is the blast radius? What changed recently? What should we do?\n\nWatch the agent:\n- Check the alarm state via live AWS API calls\n- Search the knowledge base for affected resources\n- Scan CloudTrail for recent changes\n- Trace the dependency chain and blast radius\n- Produce a structured triage report with timeline and action items\n\n### Step 3: Dig Deeper\n\nAsk follow-up questions:\n\n> What ECS services are affected by this outage?\n\n> If the Bella Vista database goes down completely, what is the full blast radius?\n\n### What to Look For\n- **Real alarm data** \u2014 the agent finds an actual firing alarm, not a hypothetical\n- **CloudTrail correlation** \u2014 recent deployments and config changes surface automatically\n- **Blast radius** \u2014 the agent traces dependencies across ECS, ALB, SQS, and DynamoDB\n- **Actionable recommendations** \u2014 specific commands and rollback options\n\n> **Click Next when done investigating.**",
           "tabs": [
+            {
+              "title": "\ud83d\udea8 Trigger Incident",
+              "type": "terminal",
+              "hostname": "cloud-client",
+              "cmd": "trigger-incident"
+            },
             {
               "title": "aura/incident-response",
               "type": "terminal",

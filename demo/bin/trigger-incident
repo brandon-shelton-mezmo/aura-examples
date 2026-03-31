@@ -1,0 +1,68 @@
+#!/bin/sh
+# trigger-incident — Simulates a Bella Vista service outage for the incident response demo
+set -e
+export AWS_PAGER=""
+
+. /etc/profile.d/aura-demo.sh 2>/dev/null || true
+ALB=${ALB_DNS:-localhost}
+
+echo ""
+echo "══════════════════════════════════════════════════════"
+echo "  🚨  TRIGGERING BELLA VISTA INCIDENT"
+echo "══════════════════════════════════════════════════════"
+echo ""
+echo "  Scenario: Database connection pool exhaustion"
+echo "  Duration: 3 minutes"
+echo "  Impact:   Order submissions will fail with 503"
+echo ""
+
+# Start the failure
+curl -s -X POST "http://$ALB:80/api/simulate/failure" \
+  -H "Content-Type: application/json" \
+  -d '{"scenario": "connection_pool", "duration": 180}' > /dev/null 2>&1
+
+echo "  ✅ Failure simulation started"
+echo ""
+echo "  Generating order traffic to trigger 5xx errors..."
+echo ""
+
+# Send POST requests to generate 5xx errors for CloudWatch
+for i in $(seq 1 20); do
+  STATUS=$(curl -so /dev/null -w "%{http_code}" -X POST "http://$ALB:80/api/orders" \
+    -H "Content-Type: application/json" \
+    -d '{"items":[{"id":"margherita","name":"Margherita Pizza","price":14.99,"quantity":2}],"customer":{"name":"Demo User","email":"demo@bellavista.com"}}' 2>/dev/null)
+  printf "  Order #%02d: HTTP %s %s\n" "$i" "$STATUS" "$([ "$STATUS" = "503" ] && echo '❌ FAILED' || echo '✅')"
+  sleep 1
+done
+
+echo ""
+echo "  ⏳ Waiting for CloudWatch alarm to fire (60-90 seconds)..."
+echo ""
+
+# Wait and check alarm
+for i in $(seq 1 12); do
+  STATE=$(aws cloudwatch describe-alarms --alarm-names bella-vista-5xx-high \
+    --region us-east-1 --query 'MetricAlarms[0].StateValue' --output text 2>/dev/null)
+  if [ "$STATE" = "ALARM" ]; then
+    echo "  🔴 ALARM FIRED: bella-vista-5xx-high is now in ALARM state!"
+    echo ""
+    echo "══════════════════════════════════════════════════════"
+    echo "  INCIDENT IS LIVE — Switch to the aura/incident-response"
+    echo "  tab and ask Aura to triage this incident."
+    echo ""
+    echo "  Try asking:"
+    echo "    The alarm bella-vista-5xx-high is firing."
+    echo "    Triage: What is broken? What is the blast radius?"
+    echo "    What changed recently? What should we do?"
+    echo "══════════════════════════════════════════════════════"
+    echo ""
+    exit 0
+  fi
+  printf "  Checking alarm... (%d/12) State: %s\n" "$i" "$STATE"
+  sleep 10
+done
+
+echo ""
+echo "  ⚠️  Alarm hasn't fired yet. It may take another minute."
+echo "  Check manually: aws cloudwatch describe-alarms --alarm-names bella-vista-5xx-high --region us-east-1"
+echo ""
