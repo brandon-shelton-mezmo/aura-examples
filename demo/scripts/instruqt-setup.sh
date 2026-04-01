@@ -172,11 +172,28 @@ server {
 }
 NGINX_TOML
 
+  # Bella Vista app proxy on port 8888
+  cat >> /etc/nginx/sites-available/openwebui << NGINX_BV
+
+server {
+    listen 8888;
+    location / {
+        proxy_pass http://${ALB_DNS}:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX_BV
+
   ln -sf /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui 2>/dev/null || true
   rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
   nginx -t 2>/dev/null && nginx 2>/dev/null &
   echo "  OpenWebUI nginx proxy running on port 3000 → ${ALB_DNS}:3000"
   echo "  TOML config server running on port 8080"
+  echo "  Bella Vista app proxy running on port 8888 → ${ALB_DNS}:80"
 else
   echo "  WARNING: nginx not available or ALB not ready. OpenWebUI tab may not work."
   # Fallback to socat

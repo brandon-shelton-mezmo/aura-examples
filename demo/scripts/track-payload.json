@@ -80,6 +80,12 @@
           "assignment": "## Welcome to Bella Vista\n\nYou just joined the platform team at **Bella Vista**, a growing restaurant chain running on AWS. Your manager says:\n\n> *Here's your AWS Console access. The app is running. You're on-call starting Monday. Good luck.*\n\n### Explore the Environment\n\nSwitch to the **AWS Console** tab. Try to answer:\n\n1. What services are running in ECS?\n2. What database backs the application?\n3. Are any CloudWatch alarms firing?\n4. How do orders flow through the system?\n\nNotice how long it takes to find answers by clicking through the console.\n\nIn the next challenge, you'll see how Aura answers all of these in minutes.\n\n> **Click Check when you're ready to continue.**",
           "tabs": [
             {
+              "title": "Bella Vista App",
+              "type": "service",
+              "hostname": "cloud-client",
+              "port": 8888
+            },
+            {
               "title": "Cloud CLI",
               "type": "terminal",
               "hostname": "cloud-client"
