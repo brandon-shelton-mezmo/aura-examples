@@ -157,18 +157,32 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
       --kubeconfig "${KUBECONFIG}" \
     || fail "kind create cluster failed"
 
-  # 4c. Load the freshly-built MCP image into kind nodes.
+  # 4c. Install a CNI. The AIOpsLab/SREGym kind image
+  # (jacksonarthurclark/aiopslab-kind-x86) does NOT ship kindnet pre-baked,
+  # so all nodes stay NotReady until we apply one. Calico is the canonical
+  # choice for AIOpsLab-derived kind setups.
+  log "  install Calico CNI (otherwise nodes stay NotReady forever)"
+  sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
+    kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml \
+    || fail "kubectl apply of Calico manifest failed"
+
+  log "  waiting up to 5 min for at least one node to become Ready"
+  sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
+    kubectl wait --for=condition=Ready node --all --timeout=300s \
+    || fail "no node reached Ready within 5 min — check 'kubectl get pods -n kube-system'"
+
+  # 4d. Load the freshly-built MCP image into kind nodes.
   log "  kind load sregym:latest"
   sudo -u "${DEMO_USER}" kind load docker-image sregym:latest --name sregym \
     || fail "kind load of sregym:latest failed"
 
-  # 4d. Apply the MCP server manifests.
+  # 4e. Apply the MCP server manifests.
   log "  kubectl apply -k mcp_server/k8s"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl apply -k "${DEMO_ROOT}/SREGym/mcp_server/k8s/" \
     || fail "kubectl apply -k mcp_server/k8s failed"
 
-  # 4e. Wait for mcp-server pod Running.
+  # 4f. Wait for mcp-server pod Running.
   log "  waiting for mcp-server pod Running (up to 5 min)"
   for i in $(seq 1 60); do
     PHASE=$(sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
