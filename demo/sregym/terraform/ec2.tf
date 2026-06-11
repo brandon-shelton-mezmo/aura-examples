@@ -30,8 +30,17 @@ locals {
       chmod 600 /etc/aura-demo.env
     fi
 
-    sudo -u ec2-user git clone --branch "${var.aura_examples_git_ref}" \
-      "${var.aura_examples_git_url}" /home/ec2-user/aura-examples
+    # Idempotent: clone if missing (cold boot from Amazon Linux 2023),
+    # otherwise pull (AMI launch — repo was baked into the AMI but we still
+    # want the latest demo code on a fresh boot).
+    if [ -d /home/ec2-user/aura-examples/.git ]; then
+      sudo -u ec2-user git -C /home/ec2-user/aura-examples fetch origin "${var.aura_examples_git_ref}"
+      sudo -u ec2-user git -C /home/ec2-user/aura-examples checkout "${var.aura_examples_git_ref}"
+      sudo -u ec2-user git -C /home/ec2-user/aura-examples pull --ff-only origin "${var.aura_examples_git_ref}" || true
+    else
+      sudo -u ec2-user git clone --branch "${var.aura_examples_git_ref}" \
+        "${var.aura_examples_git_url}" /home/ec2-user/aura-examples
+    fi
     cd /home/ec2-user/aura-examples/demo/sregym
 
     export DEMO_S3_BUCKET="${var.demo_s3_bucket}"
@@ -43,7 +52,7 @@ locals {
 }
 
 resource "aws_instance" "demo" {
-  ami                    = data.aws_ami.al2023.id
+  ami                    = var.ami_id != "" ? var.ami_id : data.aws_ami.al2023.id
   instance_type          = var.instance_type
   key_name               = var.key_name
   subnet_id              = data.aws_subnets.default.ids[0]

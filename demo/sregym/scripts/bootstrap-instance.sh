@@ -268,11 +268,16 @@ log "step 6: port-forward + bridges (systemd)"
 sudo tee /etc/systemd/system/aura-demo-mcp-portforward.service >/dev/null <<UNIT
 [Unit]
 Description=AURA demo: port-forward SREGym mcp-server svc
-After=network.target
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 User=${DEMO_USER}
 Environment=KUBECONFIG=${KUBECONFIG}
+# Wait until the mcp-server pod is actually Ready before opening the
+# port-forward; this prevents the crashloop on AMI launch where kind
+# containers come up but kubelet/pod recovery takes ~30s.
+ExecStartPre=/usr/local/bin/kubectl wait --for=condition=Ready pod -n sregym -l app.kubernetes.io/name=mcp-server --timeout=300s
 ExecStart=/usr/local/bin/kubectl port-forward svc/mcp-server -n sregym 9954:9954 --address 127.0.0.1
 Restart=always
 RestartSec=5s

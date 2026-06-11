@@ -4,6 +4,12 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "ami_id" {
+  description = "Pre-baked demo AMI to launch from (dropping boot time from ~25 min to ~2-3 min). When empty, fall back to the latest Amazon Linux 2023 + the full bootstrap (cargo build + kind create + helm install). For account 627029844476 the validated AMI is ami-0e1820c60f160a3bf."
+  type        = string
+  default     = ""
+}
+
 variable "owner_tag" {
   description = "Value for the Owner tag (e.g. your email)."
   type        = string

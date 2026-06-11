@@ -20,6 +20,14 @@ bedrock_secret_access_key = ""
 # demo_s3_bucket = "aura-sregym-demo-staging"
 
 # Pin SREGym commit + AURA ref. Default is "main" for both. Set to specific
-# SHAs once we lock the demo to a known-good combination.
+# SHAs once we lock the demo to a known-good combination. Ignored entirely
+# when ami_id is set (the AMI has both pre-fetched).
 # sregym_commit_sha = "main"
 # aura_git_ref      = "main"
+
+# Pre-baked AMI. When set, boot time drops from ~25 min to ~2-3 min because
+# rust + AURA binary + SREGym checkout + docker images + kind cluster +
+# helm release are all pre-installed. The bootstrap still runs idempotently
+# to rewrite systemd units and re-inject the fault. For account 627029844476
+# the validated AMI is ami-0e1820c60f160a3bf.
+# ami_id = "ami-0e1820c60f160a3bf"
