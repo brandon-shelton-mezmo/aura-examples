@@ -41,13 +41,46 @@ Bake an AMI to skip the cargo build at boot.
 ```bash
 cd demo/sregym/terraform
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars
+# edit terraform.tfvars — set owner_tag, key_name, your_ip_cidr; for
+# self-contained aura-cli install, also set:
+#     demo_s3_bucket = "aura-sregym-demo-staging"
 terraform init
 terraform apply
 ```
 
 Then SSH in (the `ssh_command` output gives you the line) and follow
 `demo/tracks/sregym-pod-scheduling.md`.
+
+### aura-cli install
+
+The bootstrap installs the operator-facing terminal client `aura-cli`
+in one of two ways:
+
+1. **S3 staging (recommended).** If `demo_s3_bucket` is set, bootstrap
+   step 3b downloads the pre-built Linux binary from
+   `s3://<bucket>/staging/aura-cli`. In account `627029844476` this
+   bucket already exists (`aura-sregym-demo-staging`) and contains a
+   build of `aura-cli` HEAD as of 2026-06-11.
+2. **Manual scp (fallback).** If S3 staging is unset, `/usr/local/bin/aura-cli`
+   stays absent and the runbook degrades gracefully (demo works via
+   curl, just no rich TUI). To install after boot:
+   ```bash
+   scp -i ~/.ssh/<key>.pem /path/to/aura-cli ec2-user@<ip>:/tmp/aura-cli
+   ssh ... 'sudo install -m 0755 /tmp/aura-cli /usr/local/bin/aura-cli'
+   ```
+
+### Refreshing the S3-staged aura-cli
+
+When mezmo/aura-cli ships new commits and you want the staging bucket
+to track them, build a fresh Linux binary (on a Linux box — or on the
+demo EC2 itself once one is running) and upload:
+
+```bash
+# On a Linux x86_64 host with rust + aura-cli source checked out:
+cd ~/Documents/GitHub/aura-cli
+cargo build --release --bin aura-cli
+aws s3 cp target/release/aura-cli s3://aura-sregym-demo-staging/staging/aura-cli
+```
 
 ## Dependencies on other repos
 

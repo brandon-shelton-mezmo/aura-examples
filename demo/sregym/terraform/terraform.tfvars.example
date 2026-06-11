@@ -11,9 +11,13 @@ your_ip_cidr = "0.0.0.0/0"   # narrow to your IP for production: "1.2.3.4/32"
 bedrock_access_key_id     = ""
 bedrock_secret_access_key = ""
 
-# Optional — point at a private S3 bucket holding pre-built artifacts to skip
-# the cargo build at boot. Leave empty for clone-and-build from source.
-# demo_s3_bucket = "my-aura-demo-staging"
+# Optional — point at the S3 bucket holding pre-built artifacts so a fresh
+# EC2 boot picks up aura-cli (and, in phase 2, a pre-built aura-web-server)
+# without needing manual scp. The bootstrap script step 3b fetches
+# s3://<bucket>/staging/aura-cli on first boot if this is set; otherwise
+# aura-cli is skipped (demo still works via curl). For account 627029844476,
+# the validated bucket is "aura-sregym-demo-staging".
+# demo_s3_bucket = "aura-sregym-demo-staging"
 
 # Pin SREGym commit + AURA ref. Default is "main" for both. Set to specific
 # SHAs once we lock the demo to a known-good combination.
