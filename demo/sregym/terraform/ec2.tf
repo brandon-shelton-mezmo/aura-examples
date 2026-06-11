@@ -22,7 +22,8 @@ locals {
     EOF
     chmod 600 /etc/aura-demo.env
 
-    sudo -u ec2-user git clone https://github.com/mezmo/aura-examples.git /home/ec2-user/aura-examples
+    sudo -u ec2-user git clone --branch "${var.aura_examples_git_ref}" \
+      "${var.aura_examples_git_url}" /home/ec2-user/aura-examples
     cd /home/ec2-user/aura-examples/demo/sregym
 
     export DEMO_S3_BUCKET="${var.demo_s3_bucket}"

@@ -54,3 +54,15 @@ variable "demo_s3_bucket" {
   type        = string
   default     = ""
 }
+
+variable "aura_examples_git_url" {
+  description = "HTTPS URL of the aura-examples repo to clone on boot. Defaults to brandon-shelton-mezmo's fork; switch to https://github.com/mezmo/aura-examples.git once this track lands upstream."
+  type        = string
+  default     = "https://github.com/brandon-shelton-mezmo/aura-examples.git"
+}
+
+variable "aura_examples_git_ref" {
+  description = "aura-examples git ref to check out on boot."
+  type        = string
+  default     = "main"
+}
