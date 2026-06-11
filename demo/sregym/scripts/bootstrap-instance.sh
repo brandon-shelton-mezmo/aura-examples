@@ -273,7 +273,7 @@ Requires=aura-demo-mcp-portforward.service
 User=${DEMO_USER}
 WorkingDirectory=${DEMO_HOME}
 Environment=PATH=${DEMO_HOME}/.local/bin:/usr/local/bin:/usr/bin
-ExecStart=${DEMO_HOME}/.local/bin/uvx --from fastmcp[server] \\
+ExecStart=${DEMO_HOME}/.local/bin/uvx --python 3.12 --from fastmcp[server] \\
   fastmcp run http://localhost:9954/${MOUNT}/sse \\
   --transport streamable-http --port ${PORT} --no-banner
 Restart=always
