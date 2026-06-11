@@ -32,6 +32,12 @@ data "aws_subnets" "default" {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+  # us-east-1e doesn't carry m5.xlarge capacity in this account; restrict to
+  # AZs that do. (`aws ec2 describe-instance-type-offerings` confirms a,b,c,d,f.)
+  filter {
+    name   = "availability-zone"
+    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+  }
 }
 
 # Amazon Linux 2023 — same family as the SREGym batch AMIs we know work.
