@@ -102,7 +102,7 @@ green.
 Sanity-check the fault is injected:
 
 ```bash
-kubectl get pods -n social-network -l app=user-service
+kubectl get pods -n social-network -l service=user-service
 # Expected: at least one pod in Pending status
 ```
 
@@ -126,20 +126,22 @@ Six steps. The Instruqt port will turn each of these into a challenge.
 kubectl get pods -n social-network
 ```
 
-**Expected observation:** one or more `user-service-*` pods stuck in
-`Pending`. Other pods are `Running`.
+**Expected observation:** one `user-service-*` pod `Running` (the
+existing replica from before the bad deploy) plus one `Pending`
+(the new replica from the bad deploy). The DeathStarBench chart
+labels pods with `service=<name>` rather than `app=<name>`.
 
 **Try to triage manually:**
 
 ```bash
-kubectl describe pod -n social-network -l app=user-service | head -40
+kubectl describe pod -n social-network -l service=user-service | tail -30
 ```
 
-**Expected observation:** the `Events` section shows a `FailedScheduling`
-warning naming a nodeSelector key that no node carries (`nodename:
-aura-demo-nonexistent-node`). The learner *could* fix this themselves
-right now — but the point is to feel the cost of doing this for an
-unfamiliar service while paged.
+**Expected observation:** the `Events` section on the Pending pod
+shows a `FailedScheduling` warning quoting a nodeSelector key that
+no node carries (`nodename: aura-demo-nonexistent-node`). The
+learner *could* fix this themselves right now — but the point is to
+feel the cost of doing this for an unfamiliar service while paged.
 
 **Check criterion:** learner can name the symptom ("pod stuck Pending")
 and the immediate event ("FailedScheduling on a nodeSelector"). They
@@ -222,7 +224,7 @@ to confirm the rollout completed.
 **Expected observation in another terminal:**
 
 ```bash
-kubectl get pods -n social-network -l app=user-service -w
+kubectl get pods -n social-network -l service=user-service -w
 # Watch Pending → Running
 ```
 
@@ -330,15 +332,21 @@ aws ec2 describe-instances \
 
 ---
 
-## 8. Known rough edges (will be smoothed in phase 1 validation)
+## 8. Known rough edges (smoothed during the 2026-06-11 validation pass)
 
-- The first boot of `aura-web-server` may take a few seconds longer than
-  the dependent bridges' health-checks expect; `Restart=always` covers
-  this but the first `sregym-status` immediately after the ready
-  sentinel may show DOWN for AURA briefly.
-- `helm install` for social-network can take up to 10 min on m5.xlarge
-  if image pulls are uncached. Subsequent boots from a baked AMI will
-  be much faster.
+- **Bootstrap idempotency** — re-running `bootstrap-instance.sh` after a
+  failed step now properly restarts the systemd units it touched
+  (`enable --now` was a no-op for already-running units, so config
+  edits weren't picked up). Fixed.
+- **`helm install` for social-network** can take up to 20 minutes on
+  m5.xlarge with cold image pulls (the DeathStarBench chart ships ~30
+  containers including MongoDB/Redis/Memcached). Subsequent boots
+  from a baked AMI will be much faster.
+- **aura-cli ships separately.** `answerbook/aura-cli` is private, so
+  the bootstrap installs the binary from S3 staging
+  (`s3://aura-sregym-demo-staging/staging/aura-cli` in account
+  627029844476). Without S3 staging the demo still works via curl,
+  just without the TUI.
 - aura-cli's TUI may render oddly over very narrow ssh terminals (<100
   cols). The fix is `resize` or a wider terminal; not a demo-blocker.
 
