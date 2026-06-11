@@ -26,15 +26,17 @@ variable "your_ip_cidr" {
 }
 
 variable "bedrock_access_key_id" {
-  description = "Cross-account access key for Bedrock (Mezmo Bedrock account)."
+  description = "Cross-account access key for Bedrock. Leave empty when the demo runs IN the Mezmo Bedrock account (then the instance profile's BedrockInvoke permission is sufficient)."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "bedrock_secret_access_key" {
-  description = "Cross-account secret key for Bedrock."
+  description = "Cross-account secret key for Bedrock. See bedrock_access_key_id."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "aura_git_ref" {

@@ -15,12 +15,20 @@ locals {
 
     dnf install -y git
 
-    install -m 0700 -d /etc
-    cat > /etc/aura-demo.env <<EOF
+    # Only materialize /etc/aura-demo.env when cross-account Bedrock creds
+    # were supplied; an empty file here would set AWS_ACCESS_KEY_ID="" in
+    # the systemd unit's env and OVERRIDE the EC2 instance profile's
+    # IMDS-served credentials, silently breaking Bedrock. When the demo
+    # instance runs in the Mezmo Bedrock account itself, the IAM role on
+    # the instance is sufficient — leave this file absent.
+    if [ -n "${var.bedrock_access_key_id}" ]; then
+      install -m 0700 -d /etc
+      cat > /etc/aura-demo.env <<EOF
     AWS_ACCESS_KEY_ID=${var.bedrock_access_key_id}
     AWS_SECRET_ACCESS_KEY=${var.bedrock_secret_access_key}
     EOF
-    chmod 600 /etc/aura-demo.env
+      chmod 600 /etc/aura-demo.env
+    fi
 
     sudo -u ec2-user git clone --branch "${var.aura_examples_git_ref}" \
       "${var.aura_examples_git_url}" /home/ec2-user/aura-examples
