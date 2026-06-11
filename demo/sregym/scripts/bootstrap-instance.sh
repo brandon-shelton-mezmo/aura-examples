@@ -289,6 +289,7 @@ sudo systemctl enable --now aura-demo-mcp-portforward.service
 sleep 3
 for mount in kubectl jaeger prometheus; do
   sudo systemctl enable --now "aura-demo-bridge-${mount}.service"
+  sudo systemctl restart "aura-demo-bridge-${mount}.service"
 done
 
 # ----------------------------------------------------------------------
@@ -347,6 +348,9 @@ fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now aura-demo-server.service
+# enable --now does NOT restart an already-running unit; force a restart so
+# a re-run of bootstrap (after editing the unit) actually picks up changes.
+sudo systemctl restart aura-demo-server.service
 
 # ----------------------------------------------------------------------
 # 9. Convenience: drop helper bins onto PATH + status sentinel
