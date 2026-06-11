@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in.
+
+aws_region   = "us-east-1"
+owner_tag    = "your.name@example.com"
+key_name     = "my-ec2-keypair-name"
+your_ip_cidr = "0.0.0.0/0"   # narrow to your IP for production: "1.2.3.4/32"
+
+# Cross-account Bedrock credentials (Mezmo Bedrock account 627029844476).
+# Same pattern as the existing Bella Vista demo — provisioned through Mezmo IAM,
+# not the demo box's instance profile.
+bedrock_access_key_id     = ""
+bedrock_secret_access_key = ""
+
+# Optional — point at a private S3 bucket holding pre-built artifacts to skip
+# the cargo build at boot. Leave empty for clone-and-build from source.
+# demo_s3_bucket = "my-aura-demo-staging"
+
+# Pin SREGym commit + AURA ref. Default is "main" for both. Set to specific
+# SHAs once we lock the demo to a known-good combination.
+# sregym_commit_sha = "main"
+# aura_git_ref      = "main"

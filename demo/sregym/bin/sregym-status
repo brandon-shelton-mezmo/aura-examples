@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# sregym-status — health roll-up for the SREGym demo box.
+#
+# Walks the demo stack from bottom to top and prints OK/DOWN for each layer.
+# Designed for the learner's "did the demo finish booting?" question and for
+# the operator's pre-flight before running through the runbook.
+
+set -uo pipefail
+
+KUBECONFIG="${KUBECONFIG:-/home/ec2-user/.kube/config}"
+export KUBECONFIG
+
+pass() { printf '  \e[32m[ OK ]\e[0m %s\n' "$*"; }
+fail() { printf '  \e[31m[DOWN]\e[0m %s\n' "$*"; }
+info() { printf '          %s\n' "$*"; }
+
+OVERALL=0
+check() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then
+    pass "${label}"
+  else
+    fail "${label}"
+    OVERALL=1
+  fi
+}
+
+echo "=== kind cluster ==="
+check "kind cluster 'sregym' exists" \
+  bash -c "kind get clusters 2>/dev/null | grep -qw sregym"
+check "kubectl context kind-sregym reachable" \
+  kubectl --context kind-sregym get nodes
+echo
+
+echo "=== SREGym MCP server ==="
+check "mcp-server pod Running" \
+  bash -c "kubectl get pods -n sregym -l app.kubernetes.io/name=mcp-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -qw Running"
+echo
+
+echo "=== social-network workload ==="
+check "namespace exists" \
+  kubectl get ns social-network
+RUNNING=$(kubectl get pods -n social-network --no-headers 2>/dev/null | awk '$3=="Running"' | wc -l | tr -d ' ')
+TOTAL=$(kubectl get pods -n social-network --no-headers 2>/dev/null | wc -l | tr -d ' ')
+PENDING=$(kubectl get pods -n social-network --no-headers 2>/dev/null | awk '$3=="Pending"' | wc -l | tr -d ' ')
+info "pods: ${RUNNING}/${TOTAL} Running, ${PENDING} Pending"
+if [ "${PENDING}" -gt 0 ]; then
+  info "(Pending is expected during the demo — that's the injected fault)"
+fi
+echo
+
+echo "=== systemd services ==="
+for svc in aura-demo-mcp-portforward \
+           aura-demo-bridge-kubectl \
+           aura-demo-bridge-jaeger \
+           aura-demo-bridge-prometheus \
+           aura-demo-server; do
+  if systemctl is-active --quiet "${svc}.service"; then
+    pass "${svc}"
+  else
+    fail "${svc} ($(systemctl is-active "${svc}.service" 2>/dev/null || echo missing))"
+    OVERALL=1
+  fi
+done
+echo
+
+echo "=== MCP bridges (Streamable HTTP) ==="
+for spec in "kubectl:9961" "jaeger:9962" "prometheus:9964"; do
+  MOUNT="${spec%%:*}"
+  PORT="${spec##*:}"
+  if exec 3<>"/dev/tcp/127.0.0.1/${PORT}" 2>/dev/null; then
+    pass "${MOUNT} bridge listening on :${PORT}"
+    exec 3<&- 3>&-
+  else
+    fail "${MOUNT} bridge :${PORT} not reachable"
+    OVERALL=1
+  fi
+done
+echo
+
+echo "=== AURA web-server ==="
+if curl -sf http://localhost:8090/health >/dev/null 2>&1; then
+  pass "aura-web-server /health"
+  info "chat: aura-cli (already configured) or sregym-ask 'your question'"
+else
+  fail "aura-web-server /health (try: journalctl -u aura-demo-server -n 50)"
+  OVERALL=1
+fi
+echo
+
+if [ "${OVERALL}" -eq 0 ]; then
+  echo "=== ALL GREEN — demo is ready ==="
+else
+  echo "=== SOME COMPONENTS DOWN — see above ==="
+  echo
+  echo "Logs:"
+  echo "  bootstrap:  tail -f /var/log/aura-demo-bootstrap.log"
+  echo "  AURA:       journalctl -u aura-demo-server -f"
+  echo "  bridges:    journalctl -u aura-demo-bridge-kubectl -f"
+fi
+exit "${OVERALL}"

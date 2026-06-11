@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# sregym-ask — thin wrapper around aura-cli for the SREGym demo box.
+#
+# Usage:
+#   sregym-ask                      # interactive REPL
+#   sregym-ask "what's wrong?"      # one-shot question
+#
+# Just sets the API URL env var and execs aura-cli. The TOML driving AURA
+# is /opt/aura-demo/aura-sregym-demo.toml and it's loaded by aura-web-server
+# (systemd unit aura-demo-server.service).
+
+set -euo pipefail
+
+export AURA_AGENT_API_URL="${AURA_AGENT_API_URL:-http://localhost:8090}"
+
+if ! command -v aura-cli >/dev/null 2>&1; then
+  echo "aura-cli not found on PATH." >&2
+  echo "  Install: cargo install --git https://github.com/mezmo/aura-cli" >&2
+  echo "  Or curl the release binary from https://github.com/mezmo/aura-cli/releases" >&2
+  exit 1
+fi
+
+if ! curl -sf "${AURA_AGENT_API_URL}/health" >/dev/null 2>&1; then
+  echo "aura-web-server at ${AURA_AGENT_API_URL} is not responding to /health." >&2
+  echo "Try: sregym-status" >&2
+  exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+  # One-shot: pass the question as a single -p prompt to aura-cli.
+  exec aura-cli -p "$*"
+else
+  # Interactive REPL.
+  exec aura-cli
+fi
