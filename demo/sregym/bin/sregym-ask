@@ -27,8 +27,8 @@ if ! curl -sf "${AURA_AGENT_API_URL}/health" >/dev/null 2>&1; then
 fi
 
 if [ "$#" -gt 0 ]; then
-  # One-shot: pass the question as a single -p prompt to aura-cli.
-  exec aura-cli -p "$*"
+  # One-shot: pass the question via --query (aura-cli's non-REPL mode).
+  exec aura-cli --query "$*"
 else
   # Interactive REPL.
   exec aura-cli
