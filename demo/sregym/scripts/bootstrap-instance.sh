@@ -141,9 +141,12 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
   # 4a. Build the SREGym MCP server image from the upstream checkout.
   # The image tag 'sregym:latest' is what mcp_server/k8s/*.yaml references.
   log "  building sregym:latest from SREGym/mcp_server/Dockerfile"
-  sudo -u "${DEMO_USER}" docker build -t sregym:latest \
+  # Build context must be the SREGym repo root — the Dockerfile COPYs
+  # logger/ and other top-level dirs into the image, not just files
+  # under mcp_server/.
+  sudo docker build -t sregym:latest \
     -f "${DEMO_ROOT}/SREGym/mcp_server/Dockerfile" \
-    "${DEMO_ROOT}/SREGym/mcp_server/" 2>&1 | tail -5 \
+    "${DEMO_ROOT}/SREGym" 2>&1 | tail -10 \
     || fail "docker build of sregym:latest failed"
 
   # 4b. Create the kind cluster from SREGym's x86 config.
