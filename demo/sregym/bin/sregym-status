@@ -86,6 +86,11 @@ else
   fail "aura-web-server /health (try: journalctl -u aura-demo-server -n 50)"
   OVERALL=1
 fi
+if command -v aura-cli >/dev/null 2>&1; then
+  pass "aura-cli installed ($(aura-cli --version 2>&1 | head -1))"
+else
+  info "  [NOTE] aura-cli not installed — curl works but rich TUI is unavailable"
+fi
 echo
 
 if [ "${OVERALL}" -eq 0 ]; then

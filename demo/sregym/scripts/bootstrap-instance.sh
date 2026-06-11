@@ -131,6 +131,28 @@ fi
 "${AURA_BIN}" --version || fail "aura-web-server smoke check failed"
 
 # ----------------------------------------------------------------------
+# 3b. aura-cli (operator-facing terminal client). Optional — the demo
+#     works via curl without it, but the runbook uses aura-cli for a
+#     rich TUI.
+#
+#     Source repo (answerbook/aura-cli) is private; we cannot clone it
+#     on the EC2 without credentials. Install path:
+#       1. If a pre-built Linux binary is in S3 staging, fetch it.
+#       2. Otherwise, leave /usr/local/bin/aura-cli absent and rely on
+#          the operator scp'ing it in (or curl-only walkthrough).
+# ----------------------------------------------------------------------
+if [ ! -x /usr/local/bin/aura-cli ]; then
+  if [ -n "${DEMO_S3_BUCKET}" ] && aws s3 ls "s3://${DEMO_S3_BUCKET}/staging/aura-cli" >/dev/null 2>&1; then
+    log "  pulling pre-built aura-cli from S3"
+    sudo aws s3 cp "s3://${DEMO_S3_BUCKET}/staging/aura-cli" /usr/local/bin/aura-cli
+    sudo chmod +x /usr/local/bin/aura-cli
+    /usr/local/bin/aura-cli --version | head -1
+  else
+    log "  aura-cli not in S3 staging — leaving /usr/local/bin/aura-cli absent (demo works without it; scp it in for the rich TUI)"
+  fi
+fi
+
+# ----------------------------------------------------------------------
 # 4. kind cluster + SREGym MCP server
 # ----------------------------------------------------------------------
 log "step 4: kind cluster + SREGym MCP server"
