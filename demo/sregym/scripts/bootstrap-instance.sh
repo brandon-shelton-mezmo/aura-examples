@@ -159,15 +159,22 @@ if ! sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl create namespace "${NS}"
 fi
 
-SN_CHART="${DEMO_ROOT}/SREGym/SREGym-applications/social-network"
-if [ ! -d "${SN_CHART}" ]; then
-  fail "SREGym-applications/social-network not present — submodule init likely failed"
+# SREGym-applications uses camelCase directory names; the actual chart for
+# DeathStarBench social-network lives two levels deep at
+# socialNetwork/helm-chart/socialnetwork/.
+SN_CHART="${DEMO_ROOT}/SREGym/SREGym-applications/socialNetwork/helm-chart/socialnetwork"
+if [ ! -f "${SN_CHART}/Chart.yaml" ]; then
+  fail "social-network Helm chart not present at ${SN_CHART} (submodule init likely failed)"
 fi
 
+# The chart is heavyweight (~30 services, MongoDB + Redis + Memcached deps,
+# all images pulled from docker.io). Give it a generous timeout; on a cold
+# image cache this is 10-15 min easily on m5.xlarge.
 sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
   helm upgrade --install social-network "${SN_CHART}" \
     --namespace "${NS}" \
-    --wait --timeout 10m
+    --timeout 20m \
+    --wait
 
 # ----------------------------------------------------------------------
 # 6. port-forward mcp-server + start fastmcp bridges (as systemd services)

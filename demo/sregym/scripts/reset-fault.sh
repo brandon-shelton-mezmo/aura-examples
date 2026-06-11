@@ -33,10 +33,10 @@ kubectl patch deployment/"${TARGET_DEPLOY}" -n "${NS}" \
 echo "[reset] waiting up to 5 min for rollout to complete"
 kubectl rollout status deployment/"${TARGET_DEPLOY}" -n "${NS}" --timeout=300s || {
   echo "[reset] rollout did not complete cleanly; current state:" >&2
-  kubectl get pods -n "${NS}" -l app="${TARGET_DEPLOY}" -o wide >&2
+  kubectl get pods -n "${NS}" -l service="${TARGET_DEPLOY}" -o wide >&2
   exit 1
 }
 
 echo "[reset] post-reset pod state:"
-kubectl get pods -n "${NS}" -l app="${TARGET_DEPLOY}" -o wide
+kubectl get pods -n "${NS}" -l service="${TARGET_DEPLOY}" -o wide
 echo "[reset] ready — fault can be re-injected via inject-fault.sh"

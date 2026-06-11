@@ -46,7 +46,7 @@ case "${PROBLEM}" in
     echo "[inject] waiting up to 60s for at least one pod to enter Pending..."
     for _ in $(seq 1 30); do
       STATE=$(kubectl get pods -n "${NS}" \
-        -l app="${TARGET_DEPLOY}" \
+        -l service="${TARGET_DEPLOY}" \
         -o jsonpath='{.items[*].status.phase}' 2>/dev/null || true)
       if echo "${STATE}" | grep -qw Pending; then
         echo "[inject] confirmed Pending pod present"
@@ -57,7 +57,7 @@ case "${PROBLEM}" in
 
     echo
     echo "[inject] post-injection pod state:"
-    kubectl get pods -n "${NS}" -l app="${TARGET_DEPLOY}" -o wide || true
+    kubectl get pods -n "${NS}" -l service="${TARGET_DEPLOY}" -o wide || true
     echo
     echo "[inject] use 'kubectl describe pod -n ${NS} -l app=${TARGET_DEPLOY}' to see"
     echo "         the FailedScheduling event AURA will key off of."
