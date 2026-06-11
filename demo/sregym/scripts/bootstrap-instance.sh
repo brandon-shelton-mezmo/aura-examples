@@ -138,12 +138,56 @@ export KUBECONFIG="${DEMO_HOME}/.kube/config"
 sudo -u "${DEMO_USER}" mkdir -p "${DEMO_HOME}/.kube"
 
 if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; then
+  # 4a. Build the SREGym MCP server image from the upstream checkout.
+  # The image tag 'sregym:latest' is what mcp_server/k8s/*.yaml references.
+  log "  building sregym:latest from SREGym/mcp_server/Dockerfile"
+  sudo -u "${DEMO_USER}" docker build -t sregym:latest \
+    -f "${DEMO_ROOT}/SREGym/mcp_server/Dockerfile" \
+    "${DEMO_ROOT}/SREGym/mcp_server/" 2>&1 | tail -5 \
+    || fail "docker build of sregym:latest failed"
+
+  # 4b. Create the kind cluster from SREGym's x86 config.
+  log "  kind create cluster --name sregym"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
-    bash "${DEMO_ROOT}/SREGym/scripts/bootstrap-sregym-kind.sh" \
-    --sregym-root "${DEMO_ROOT}/SREGym" \
-    --no-preload-images \
-    || fail "kind cluster bootstrap failed"
+    kind create cluster --name sregym \
+      --config "${DEMO_ROOT}/SREGym/kind/kind-config-x86.yaml" \
+      --kubeconfig "${KUBECONFIG}" \
+    || fail "kind create cluster failed"
+
+  # 4c. Load the freshly-built MCP image into kind nodes.
+  log "  kind load sregym:latest"
+  sudo -u "${DEMO_USER}" kind load docker-image sregym:latest --name sregym \
+    || fail "kind load of sregym:latest failed"
+
+  # 4d. Apply the MCP server manifests.
+  log "  kubectl apply -k mcp_server/k8s"
+  sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
+    kubectl apply -k "${DEMO_ROOT}/SREGym/mcp_server/k8s/" \
+    || fail "kubectl apply -k mcp_server/k8s failed"
+
+  # 4e. Wait for mcp-server pod Running.
+  log "  waiting for mcp-server pod Running (up to 5 min)"
+  for i in $(seq 1 60); do
+    PHASE=$(sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
+      kubectl get pod -n sregym -l app.kubernetes.io/name=mcp-server \
+      -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)
+    if [ "${PHASE}" = "Running" ]; then
+      log "  mcp-server Running after $((i * 5))s"
+      break
+    fi
+    if [ "${i}" -eq 60 ]; then
+      sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
+        kubectl get pod -n sregym 2>&1 | head -5
+      fail "mcp-server did not reach Running within 5 min"
+    fi
+    sleep 5
+  done
 fi
+
+# kubeconfig was written by 'kind create' as root via the env-elevated
+# sudo call above; on subsequent steps we read it as ec2-user (the
+# DEMO_USER). Make sure ec2-user owns the dir + file.
+sudo chown -R "${DEMO_USER}:${DEMO_USER}" "${DEMO_HOME}/.kube"
 
 sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
   kubectl wait --for=condition=Ready node --all --timeout=300s
