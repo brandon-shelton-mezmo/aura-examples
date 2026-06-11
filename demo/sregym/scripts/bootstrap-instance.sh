@@ -324,6 +324,8 @@ EnvironmentFile=-/etc/aura-demo.env
 Environment=AURA_CUSTOM_EVENTS=true
 Environment=TOOL_RESULT_MODE=aura
 Environment=CONFIG_PATH=${DEMO_ROOT}/aura-sregym-demo.toml
+Environment=HOST=127.0.0.1
+Environment=PORT=8090
 ExecStart=${AURA_BIN}
 Restart=always
 RestartSec=5s
