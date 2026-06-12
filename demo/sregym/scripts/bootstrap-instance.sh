@@ -391,6 +391,12 @@ sudo systemctl restart aura-demo-server.service
 #     This oneshot unit does that automatically on every boot.
 # ----------------------------------------------------------------------
 log "step 8b: install AMI-firstboot cleanup oneshot"
+# Install the standalone cleanup script (lives in bin/ — keeps the
+# systemd unit's ExecStart trivial, avoiding escape-layer issues with
+# inline awk that we hit on the first iteration of this design).
+sudo install -m 0755 "${DEMO_ASSETS_DIR}/bin/aura-demo-cleanup-unknown" \
+  /usr/local/bin/aura-demo-cleanup-unknown
+
 sudo tee /etc/systemd/system/aura-demo-firstboot.service >/dev/null <<UNIT
 [Unit]
 Description=AURA demo: clean up Unknown pods from AMI etcd state
@@ -399,9 +405,7 @@ Requires=aura-demo-mcp-portforward.service
 
 [Service]
 Type=oneshot
-User=${DEMO_USER}
-Environment=KUBECONFIG=${KUBECONFIG}
-ExecStart=/bin/bash -c "for i in \$(seq 1 30); do UNK=\$(/usr/local/bin/kubectl get pods -n social-network --field-selector status.phase=Unknown --no-headers 2>/dev/null | wc -l); if [ \\\"\$UNK\\\" -eq 0 ]; then exit 0; fi; /usr/local/bin/kubectl delete pods -n social-network --field-selector status.phase=Unknown --grace-period=0 --force 2>&1 | head -20; sleep 10; done"
+ExecStart=/usr/local/bin/aura-demo-cleanup-unknown
 RemainAfterExit=yes
 
 [Install]

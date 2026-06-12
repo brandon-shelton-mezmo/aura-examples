@@ -1,0 +1,27 @@
+#!/bin/bash
+# Force-delete pods stuck in "Unknown" status (the value shown by kubectl
+# in column 3 — which corresponds to status.containerStatuses[].reason
+# being "Unknown", NOT status.phase=Unknown). These are pods whose etcd
+# entries reference container IDs that didn't survive the host transition
+# when the demo AMI is launched on a new EC2; kubelet never resyncs them,
+# so kubectl displays them as Unknown indefinitely until force-deleted.
+#
+# Deployment controllers reschedule fresh replicas immediately. Idempotent:
+# exits 0 when nothing matches.
+set -euo pipefail
+export KUBECONFIG=/home/ec2-user/.kube/config
+
+for i in $(seq 1 30); do
+  UNK_NAMES=$(/usr/local/bin/kubectl get pods -n social-network --no-headers 2>/dev/null \
+    | awk '$3=="Unknown" {print $1}')
+  if [ -z "$UNK_NAMES" ]; then
+    echo "iter $i: no Unknown-status pods, done"
+    exit 0
+  fi
+  echo "iter $i: force-deleting Unknown pods: $UNK_NAMES"
+  /usr/local/bin/kubectl delete pods -n social-network $UNK_NAMES \
+    --grace-period=0 --force 2>&1 | head -20 || true
+  sleep 10
+done
+echo "Unknown pods persisted past 30 iterations; giving up"
+exit 1
