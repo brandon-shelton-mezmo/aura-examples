@@ -179,21 +179,22 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
       --kubeconfig "${KUBECONFIG}" \
     || fail "kind create cluster failed"
 
-  # 4c. Bulk-load every image we'll need from the host docker cache into
-  # the kind nodes' containerd, BEFORE applying Calico or the workload.
-  # This is the speed win that lets fresh AMI launches finish bootstrap
-  # in ~5 min instead of ~25 min — the host's /var/lib/docker has all
-  # the images pre-pulled at AMI bake time, so kubelet finds them in
-  # local containerd state and never reaches docker.io at deploy time.
-  log "  kind load all pre-cached images from host docker"
-  sudo -u "${DEMO_USER}" bash "${DEMO_ASSETS_DIR}/bin/aura-demo-kind-load-images" \
-    || fail "kind load of pre-cached images failed"
+  # 4c. Load just sregym:latest into kind. This image is built locally
+  # by step 4a and is not on any registry, so it MUST be kind-load'd
+  # before the MCP server can pull it. Other workload images
+  # (social-network, Calico) are pulled from docker.io directly at
+  # deploy time — we tried pre-loading them with `kind load
+  # docker-image` and the 13-image batch took ~21 min, vs ~10 min for
+  # kubelet to pull the same set from docker.io. Public registry is
+  # faster than kind's load mechanism for this image set.
+  log "  kind load sregym:latest"
+  sudo -u "${DEMO_USER}" kind load docker-image sregym:latest --name sregym \
+    || fail "kind load of sregym:latest failed"
 
   # 4d. Install a CNI. The AIOpsLab/SREGym kind image
   # (jacksonarthurclark/aiopslab-kind-x86) does NOT ship kindnet pre-baked,
   # so all nodes stay NotReady until we apply one. Calico is the canonical
-  # choice for AIOpsLab-derived kind setups. Step 4c just loaded the
-  # Calico images into kind, so this apply doesn't hit docker.io.
+  # choice for AIOpsLab-derived kind setups.
   log "  install Calico CNI (otherwise nodes stay NotReady forever)"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml \
@@ -204,7 +205,7 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
     kubectl wait --for=condition=Ready node --all --timeout=300s \
     || fail "no node reached Ready within 5 min — check 'kubectl get pods -n kube-system'"
 
-  # 4e. Apply the MCP server manifests (image was loaded in step 4c).
+  # 4e. Apply the MCP server manifests.
   log "  kubectl apply -k mcp_server/k8s"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl apply -k "${DEMO_ROOT}/SREGym/mcp_server/k8s/" \
