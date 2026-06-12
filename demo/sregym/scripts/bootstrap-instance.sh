@@ -179,10 +179,21 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
       --kubeconfig "${KUBECONFIG}" \
     || fail "kind create cluster failed"
 
-  # 4c. Install a CNI. The AIOpsLab/SREGym kind image
+  # 4c. Bulk-load every image we'll need from the host docker cache into
+  # the kind nodes' containerd, BEFORE applying Calico or the workload.
+  # This is the speed win that lets fresh AMI launches finish bootstrap
+  # in ~5 min instead of ~25 min — the host's /var/lib/docker has all
+  # the images pre-pulled at AMI bake time, so kubelet finds them in
+  # local containerd state and never reaches docker.io at deploy time.
+  log "  kind load all pre-cached images from host docker"
+  sudo -u "${DEMO_USER}" bash "${DEMO_ASSETS_DIR}/bin/aura-demo-kind-load-images" \
+    || fail "kind load of pre-cached images failed"
+
+  # 4d. Install a CNI. The AIOpsLab/SREGym kind image
   # (jacksonarthurclark/aiopslab-kind-x86) does NOT ship kindnet pre-baked,
   # so all nodes stay NotReady until we apply one. Calico is the canonical
-  # choice for AIOpsLab-derived kind setups.
+  # choice for AIOpsLab-derived kind setups. Step 4c just loaded the
+  # Calico images into kind, so this apply doesn't hit docker.io.
   log "  install Calico CNI (otherwise nodes stay NotReady forever)"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml \
@@ -193,12 +204,7 @@ if ! sudo -u "${DEMO_USER}" kind get clusters 2>/dev/null | grep -q '^sregym$'; 
     kubectl wait --for=condition=Ready node --all --timeout=300s \
     || fail "no node reached Ready within 5 min — check 'kubectl get pods -n kube-system'"
 
-  # 4d. Load the freshly-built MCP image into kind nodes.
-  log "  kind load sregym:latest"
-  sudo -u "${DEMO_USER}" kind load docker-image sregym:latest --name sregym \
-    || fail "kind load of sregym:latest failed"
-
-  # 4e. Apply the MCP server manifests.
+  # 4e. Apply the MCP server manifests (image was loaded in step 4c).
   log "  kubectl apply -k mcp_server/k8s"
   sudo -u "${DEMO_USER}" env KUBECONFIG="${KUBECONFIG}" \
     kubectl apply -k "${DEMO_ROOT}/SREGym/mcp_server/k8s/" \
@@ -419,7 +425,7 @@ sudo systemctl enable aura-demo-firstboot.service
 sudo systemctl restart aura-demo-firstboot.service || true
 
 log "step 9: install helper bins"
-for helper in sregym-status sregym-ask; do
+for helper in sregym-status sregym-ask aura-demo-kind-load-images aura-demo-cleanup-unknown; do
   if [ -x "${DEMO_ASSETS_DIR}/bin/${helper}" ]; then
     sudo install -m 0755 "${DEMO_ASSETS_DIR}/bin/${helper}" "/usr/local/bin/${helper}"
   fi

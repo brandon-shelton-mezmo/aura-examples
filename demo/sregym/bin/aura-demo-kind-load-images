@@ -1,0 +1,53 @@
+#!/bin/bash
+# Load all required social-network + Calico images from the host's docker
+# cache into the kind cluster's containerd. Bootstrap runs this after
+# 'kind create cluster' and before 'kubectl apply' / 'helm install' so
+# kubelet can pull from local containerd state instead of from docker.io.
+#
+# Idempotent: 'kind load docker-image' is a no-op if the image is already
+# loaded. Missing-from-host images are reported but don't abort — the
+# corresponding pods will fall back to pulling from docker.io at deploy
+# time.
+set -uo pipefail
+
+CLUSTER_NAME="${CLUSTER_NAME:-sregym}"
+
+# Image list — kept in sync with the social-network Helm chart's deployed
+# images plus the Calico manifests we apply for CNI.
+IMAGES=(
+  # social-network main containers
+  "docker.io/deathstarbench/social-network-microservices:latest"
+  "docker.io/yg397/media-frontend:xenial"
+  "docker.io/yg397/openresty-thrift:xenial"
+  # social-network init container (git clone)
+  "docker.io/alpine/git:latest"
+  # social-network observability + datastores
+  "docker.io/jaegertracing/all-in-one:1.57"
+  "docker.io/library/memcached:1.6.7"
+  "docker.io/library/mongo:4.4.6"
+  "docker.io/library/redis:6.2.4"
+  # Calico CNI
+  "docker.io/calico/cni:v3.27.0"
+  "docker.io/calico/node:v3.27.0"
+  "docker.io/calico/kube-controllers:v3.27.0"
+  "docker.io/calico/pod2daemon-flexvol:v3.27.0"
+  # MCP server
+  "sregym:latest"
+)
+
+START=$(date +%s)
+LOADED=0
+SKIPPED=0
+for img in "${IMAGES[@]}"; do
+  if ! docker image inspect "$img" >/dev/null 2>&1; then
+    echo "[skip] $img not in host docker cache"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+  echo "[load] $img"
+  kind load docker-image "$img" --name "$CLUSTER_NAME" 2>&1 | tail -3
+  LOADED=$((LOADED + 1))
+done
+
+ELAPSED=$(( $(date +%s) - START ))
+echo "kind-load summary: loaded=${LOADED} skipped=${SKIPPED} elapsed=${ELAPSED}s"
