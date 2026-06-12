@@ -382,6 +382,38 @@ sudo systemctl restart aura-demo-server.service
 # ----------------------------------------------------------------------
 # 9. Convenience: drop helper bins onto PATH + status sentinel
 # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# 8b. AMI-firstboot cleanup unit. When this AMI is launched on a fresh
+#     EC2, the kind cluster auto-resumes but etcd holds pod entries
+#     whose containerd state has been GC'd in the worker nodes; those
+#     pods show up as 'Unknown' and never recover until kubectl force-
+#     deletes them so the deployment controllers schedule fresh ones.
+#     This oneshot unit does that automatically on every boot.
+# ----------------------------------------------------------------------
+log "step 8b: install AMI-firstboot cleanup oneshot"
+sudo tee /etc/systemd/system/aura-demo-firstboot.service >/dev/null <<UNIT
+[Unit]
+Description=AURA demo: clean up Unknown pods from AMI etcd state
+After=aura-demo-mcp-portforward.service
+Requires=aura-demo-mcp-portforward.service
+
+[Service]
+Type=oneshot
+User=${DEMO_USER}
+Environment=KUBECONFIG=${KUBECONFIG}
+ExecStart=/bin/bash -c "for i in \$(seq 1 30); do UNK=\$(/usr/local/bin/kubectl get pods -n social-network --field-selector status.phase=Unknown --no-headers 2>/dev/null | wc -l); if [ \\\"\$UNK\\\" -eq 0 ]; then exit 0; fi; /usr/local/bin/kubectl delete pods -n social-network --field-selector status.phase=Unknown --grace-period=0 --force 2>&1 | head -20; sleep 10; done"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable aura-demo-firstboot.service
+# Trigger now if the cluster has Unknown pods at this point (idempotent;
+# the oneshot exits cleanly when there are none).
+sudo systemctl restart aura-demo-firstboot.service || true
+
 log "step 9: install helper bins"
 for helper in sregym-status sregym-ask; do
   if [ -x "${DEMO_ASSETS_DIR}/bin/${helper}" ]; then
